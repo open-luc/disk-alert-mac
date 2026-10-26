@@ -354,6 +354,7 @@ enum VolumeInfo {
         let format: String
         let space: Space?
         let isImage: Bool
+        let readOnly: Bool
         let category: DriveCategory
     }
 
@@ -383,6 +384,7 @@ enum VolumeInfo {
             let kind = (desc[kDADiskDescriptionVolumeKindKey as String] as? String) ?? ""
             result.append(Mounted(path: mountPoint, name: name, uuid: uuid(from: desc), format: formatName(kind),
                                   space: space(of: entry), isImage: isImage,
+                                  readOnly: entry.f_flags & UInt32(MNT_RDONLY) != 0,
                                   category: DriveCategory.classify(isImage: isImage, deviceProtocol: proto, model: model)))
         }
         return result

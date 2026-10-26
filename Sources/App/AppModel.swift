@@ -10,6 +10,7 @@ struct MountedVolume: Identifiable, Equatable {
     let free: Int64
     let total: Int64
     let category: DriveCategory
+    var readOnly = false
 
     var usedFraction: Double {
         total > 0 ? min(1, max(0, Double(total - free) / Double(total))) : 0
@@ -87,7 +88,11 @@ final class AppModel: ObservableObject {
             MountedVolume(url: URL(fileURLWithPath: "/Volumes/Media SSD"), name: "Media SSD",
                           free: 1_240_000_000_000, total: 2_000_000_000_000, category: .drive),
             MountedVolume(url: URL(fileURLWithPath: "/Volumes/EOS_DIGITAL"), name: "EOS_DIGITAL",
-                          free: 41_800_000_000, total: 128_000_000_000, category: .memoryCard)
+                          free: 41_800_000_000, total: 128_000_000_000, category: .memoryCard),
+            MountedVolume(url: URL(fileURLWithPath: "/Volumes/Install Figma"), name: "Install Figma",
+                          free: 0, total: 412_000_000, category: .diskImage, readOnly: true),
+            MountedVolume(url: URL(fileURLWithPath: "/Volumes/Project Archive"), name: "Project Archive",
+                          free: 2_100_000_000, total: 5_000_000_000, category: .diskImage)
         ]
         customSounds = ["fart-reverb", "Shutter Click"]
         bundledSounds = ["fart-reverb"]
@@ -109,7 +114,7 @@ final class AppModel: ObservableObject {
             let match = v.uuid.flatMap { known[$0] } ?? known.values.first { $0.name == v.name }
             return MountedVolume(url: URL(fileURLWithPath: v.path), name: v.name,
                                  free: v.space?.free ?? 0, total: v.space?.total ?? 0,
-                                 category: match?.category ?? v.category)
+                                 category: match?.category ?? v.category, readOnly: v.readOnly)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 

@@ -10,13 +10,8 @@ struct MenuView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
-            Text("Connected")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.top, 2)
-
             if model.mountedVolumes.isEmpty {
+                sectionTitle("Connected")
                 HStack(spacing: 10) {
                     Image(systemName: "externaldrive.badge.questionmark")
                         .font(.system(size: 18))
@@ -28,10 +23,30 @@ struct MenuView: View {
                 .padding(12)
                 .moduleBackground()
             } else {
-                VStack(spacing: 6) {
-                    ForEach(model.mountedVolumes) { v in
-                        DriveTile(volume: v)
+                // Real drives get the big tiles; disk images sit in their own slimmer list below.
+                let drives = model.mountedVolumes.filter { $0.category != .diskImage }
+                let images = model.mountedVolumes.filter { $0.category == .diskImage }
+                if !drives.isEmpty {
+                    sectionTitle("Drives")
+                    VStack(spacing: 6) {
+                        ForEach(drives) { v in
+                            DriveTile(volume: v)
+                        }
                     }
+                }
+                if !images.isEmpty {
+                    sectionTitle("Disk Images")
+                    VStack(spacing: 0) {
+                        ForEach(Array(images.enumerated()), id: \.element.id) { i, v in
+                            if i > 0 { Divider().padding(.leading, 40).padding(.trailing, 8) }
+                            DiskImageRow(volume: v)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.12))
+                    )
                 }
             }
 
@@ -56,6 +71,14 @@ struct MenuView: View {
         .padding(10)
         .frame(width: 320)
         .onAppear { model.refresh() }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.top, 2)
     }
 
     private var header: some View {
@@ -126,6 +149,54 @@ struct DriveTile: View {
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { NSWorkspace.shared.activateFileViewerSelecting([volume.url]) }
         .help("Double-click to show in Finder")
+    }
+}
+
+/// A disk image: one slim row with a purple disc, so it reads as different from a real drive.
+struct DiskImageRow: View {
+    @EnvironmentObject var model: AppModel
+    let volume: MountedVolume
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "opticaldisc")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Color.purple)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(volume.name)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            Button {
+                model.eject(volume)
+            } label: {
+                Image(systemName: "eject.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help("Eject \(volume.name)")
+            .accessibilityLabel("Eject \(volume.name)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { NSWorkspace.shared.activateFileViewerSelecting([volume.url]) }
+        .help("Double-click to show in Finder")
+    }
+
+    /// Installers are read-only, so their size is all that matters. Writable images
+    /// (some grow as they fill) show free space like a drive.
+    private var detail: String {
+        if volume.readOnly { return "Read-only · \(Format.bytes(volume.total))" }
+        guard volume.total > 0 else { return "Disk image" }
+        return "\(Format.bytes(volume.free)) free of \(Format.bytes(volume.total))"
     }
 }
 
