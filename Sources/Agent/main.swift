@@ -147,7 +147,8 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
             if s.showInfo { body = d.info }
             Store.log(HistoryEvent(date: Date(), name: vol.name, kind: .connected))
         case .eject:
-            body = "Safe to unplug"
+            // A disk image has nothing to unplug.
+            body = vol.category == .diskImage ? "Disk image closed" : "Safe to unplug"
             Store.log(HistoryEvent(date: Date(), name: vol.name, kind: .ejected))
         case .unsafe:
             body = "Unplugged \(Self.stamp(Date())) without ejecting. Files may be damaged."
