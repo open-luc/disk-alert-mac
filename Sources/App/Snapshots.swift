@@ -25,6 +25,8 @@ enum Snapshots {
             render(DrivesTab().environmentObject(model), title: "Drives", to: out.appendingPathComponent("settings-drives-\(suffix).png"), look: look)
             render(DrivesTab(expanded: ["b"], startAtBottom: true).environmentObject(model), title: "Drives",
                    to: out.appendingPathComponent("settings-your-drives-\(suffix).png"), look: look)
+            render(AlphaBuildsSheet(updater: Updater.shared), title: nil,
+                   to: out.appendingPathComponent("alpha-builds-\(suffix).png"), look: look)
             render(SoundsTab().environmentObject(model), title: "Custom Sounds", to: out.appendingPathComponent("settings-sounds-\(suffix).png"), look: look)
             render(MenuView().environmentObject(model), title: nil, to: out.appendingPathComponent("menu-\(suffix).png"), look: look)
         }

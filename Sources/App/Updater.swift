@@ -25,10 +25,31 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         didSet { UserDefaults.standard.set(automatic, forKey: "autoUpdateCheck") }
     }
 
+    /// Opt-in from Settings › General › Alpha Builds. Alphas are only ever offered when you
+    /// check by hand, and only once you're up to date with the public release.
+    @Published var alphaOptIn: Bool = UserDefaults.standard.bool(forKey: "alphaUpdates") {
+        didSet { UserDefaults.standard.set(alphaOptIn, forKey: "alphaUpdates") }
+    }
+
     private var timer: Timer?
 
+    /// The full version, e.g. "0.4.1" or "0.4.1-alpha.18".
     var currentVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let base = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let pre = Bundle.main.object(forInfoDictionaryKey: "DAPrerelease") as? String ?? ""
+        return pre.isEmpty ? base : "\(base)-\(pre)"
+    }
+
+    var isAlpha: Bool { Version(currentVersion).pre != nil }
+
+    /// The version as people read it, e.g. "0.4.1" or "0.4.1 Alpha 18".
+    var displayVersion: String { Self.display(currentVersion) }
+
+    static func display(_ version: String) -> String {
+        let v = Version(version)
+        let base = v.nums.map(String.init).joined(separator: ".")
+        guard let pre = v.pre else { return base }
+        return "\(base) Alpha \(pre)"
     }
 
     /// Checks once a day while the app runs, if automatic checks are on.
@@ -52,13 +73,18 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let body: String?
         let html_url: String
         let assets: [Asset]
+        let prerelease: Bool?
+        let draft: Bool?
+        var version: String { tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV")) }
         struct Asset: Decodable { let name: String; let browser_download_url: String }
     }
 
     func check(userInitiated: Bool) {
         guard state != .checking, state != .downloading, state != .installing else { return }
         state = .checking
-        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repo)/releases/latest")!)
+        // With alphas on, the whole list is needed: "latest" never includes pre-releases.
+        let path = alphaOptIn ? "releases?per_page=30" : "releases/latest"
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repo)/\(path)")!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
@@ -66,44 +92,121 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
             DispatchQueue.main.async {
                 self.lastChecked = Date()
                 UserDefaults.standard.set(self.lastChecked, forKey: "lastUpdateCheck")
-                guard let data, error == nil,
-                      let release = try? JSONDecoder().decode(Release.self, from: data) else {
+                guard let data, error == nil, let releases = self.decode(data) else {
                     self.state = .failed("Couldn’t reach GitHub.")
                     if userInitiated { self.alert("Couldn’t check for updates", "Check your internet connection and try again.") }
                     return
                 }
-                let latest = release.tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-                guard Self.isNewer(latest, than: self.currentVersion) else {
-                    self.state = .upToDate
-                    if userInitiated {
-                        self.alert("You’re up to date", "Disk Alert \(self.currentVersion) is the latest version.")
-                    }
-                    return
-                }
-                self.state = .available(latest)
-                self.offer(release, version: latest)
+                self.handle(releases, userInitiated: userInitiated)
             }
         }.resume()
     }
 
-    static func isNewer(_ a: String, than b: String) -> Bool {
-        let pa = a.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
-        let pb = b.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
-        for i in 0..<max(pa.count, pb.count) {
-            let x = i < pa.count ? pa[i] : 0
-            let y = i < pb.count ? pb[i] : 0
-            if x != y { return x > y }
+    /// A list of releases, or the single latest release when alphas are off.
+    private func decode(_ data: Data) -> [Release]? {
+        if alphaOptIn { return try? JSONDecoder().decode([Release].self, from: data) }
+        guard let one = try? JSONDecoder().decode(Release.self, from: data) else { return nil }
+        return [one]
+    }
+
+    private func handle(_ releases: [Release], userInitiated: Bool) {
+        let published = releases.filter { $0.draft != true }
+        let newest = { (list: [Release]) in list.max { Version($0.version) < Version($1.version) } }
+        let stable = newest(published.filter { $0.prerelease != true })
+        let alpha = newest(published.filter { $0.prerelease == true })
+
+        // A newer public release always comes first.
+        if let stable, Self.isNewer(stable.version, than: currentVersion) {
+            state = .available(stable.version)
+            offer(stable, version: stable.version)
+            return
         }
-        return false
+        state = .upToDate
+        guard userInitiated else { return }
+
+        // Alphas are offered only when asked, and never pushed: OK is the default.
+        if alphaOptIn, let alpha, Self.isNewer(alpha.version, than: currentVersion) {
+            offerAlpha(alpha)
+            return
+        }
+        if isAlpha {
+            alert("You’re up to date", "Disk Alert \(displayVersion) is the newest alpha build.")
+        } else {
+            alert("You’re up to date", "Disk Alert \(displayVersion) is the latest version.")
+        }
+    }
+
+    private func offerAlpha(_ release: Release) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alphaName = Self.display(release.version)
+        let a = NSAlert()
+        a.messageText = "You’re up to date"
+        var text = isAlpha
+            ? "You have Disk Alert \(displayVersion)."
+            : "Disk Alert \(displayVersion) is the latest public release."
+        text += "\n\nA newer alpha build is available: \(alphaName). Alpha builds haven’t been fully tested and may be incomplete."
+        var notes = (release.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if notes.count > 500 { notes = String(notes.prefix(500)) + "…" }
+        if !notes.isEmpty { text += "\n\n" + notes }
+        a.informativeText = text
+        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: "Install Alpha")
+        a.addButton(withTitle: "View on GitHub")
+        switch a.runModal() {
+        case .alertSecondButtonReturn:
+            guard let dmg = release.assets.first(where: { $0.name.hasSuffix(".dmg") }),
+                  let url = URL(string: dmg.browser_download_url) else {
+                alert("Couldn’t update", "This alpha has no .dmg installer attached.")
+                return
+            }
+            pendingVersion = alphaName
+            install(from: url)
+        case .alertThirdButtonReturn:
+            if let url = URL(string: release.html_url) { NSWorkspace.shared.open(url) }
+        default:
+            break
+        }
+    }
+
+    /// A version like 0.4.1 or 0.4.1-alpha.18. An alpha comes before the release it leads up to.
+    struct Version: Comparable {
+        let nums: [Int]
+        let pre: Int?
+
+        init(_ string: String) {
+            let s = string.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+            let parts = s.split(separator: "-", maxSplits: 1)
+            nums = (parts.first ?? "").split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
+            pre = parts.count > 1 ? parts[1].split(separator: ".").last.flatMap { Int($0) } ?? 0 : nil
+        }
+
+        static func < (a: Version, b: Version) -> Bool {
+            for i in 0..<max(a.nums.count, b.nums.count) {
+                let x = i < a.nums.count ? a.nums[i] : 0
+                let y = i < b.nums.count ? b.nums[i] : 0
+                if x != y { return x < y }
+            }
+            switch (a.pre, b.pre) {
+            case let (x?, y?): return x < y
+            case (_?, nil): return true
+            default: return false
+            }
+        }
+
+        static func == (a: Version, b: Version) -> Bool { !(a < b) && !(b < a) }
+    }
+
+    static func isNewer(_ a: String, than b: String) -> Bool {
+        Version(b) < Version(a)
     }
 
     private func offer(_ release: Release, version: String) {
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
-        a.messageText = "Disk Alert \(version) is available"
+        a.messageText = "Disk Alert \(Self.display(version)) is available"
         var notes = (release.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if notes.count > 600 { notes = String(notes.prefix(600)) + "…" }
-        a.informativeText = "You have \(currentVersion).\n\n" + (notes.isEmpty ? "" : notes)
+        a.informativeText = "You have \(displayVersion).\n\n" + (notes.isEmpty ? "" : notes)
         a.addButton(withTitle: "Install and Relaunch")
         a.addButton(withTitle: "Later")
         a.addButton(withTitle: "View on GitHub")
@@ -115,7 +218,7 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 alert("Couldn’t update", "This release has no .dmg installer attached.")
                 return
             }
-            pendingVersion = version
+            pendingVersion = Self.display(version)
             install(from: url)
         case .alertThirdButtonReturn:
             if let url = URL(string: release.html_url) { NSWorkspace.shared.open(url) }
@@ -254,7 +357,7 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         case .checking: return "Checking…"
         case .downloading: return "Downloading update…"
         case .installing: return "Installing update…"
-        case .available(let v): return "Version \(v) is available"
+        case .available(let v): return "Version \(Self.display(v)) is available"
         case .failed(let why): return why
         case .upToDate, .idle:
             if let d = lastChecked { return "Last checked " + d.formatted(.relative(presentation: .named)) }

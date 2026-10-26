@@ -11,6 +11,8 @@ enum SettingsLayout {
 
 struct GeneralTab: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject var updater = Updater.shared
+    @State private var showAlphaSheet = false
 
     var body: some View {
         Form {
@@ -86,14 +88,71 @@ struct GeneralTab: View {
                     Button("Uninstall Disk Alert…", role: .destructive) { model.uninstall() }
                 }
             } footer: {
-                Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                HStack {
+                    Text("Version \(updater.displayVersion)")
+                    Spacer()
+                    // Kept small and quiet on purpose: alphas are for people who go looking.
+                    Button(updater.alphaOptIn ? "Alpha builds: On" : "Alpha builds…") { showAlphaSheet = true }
+                        .buttonStyle(.plain)
+                        .help("Early, untested versions of Disk Alert")
+                }
+                .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .frame(width: SettingsLayout.size.width, height: SettingsLayout.size.height)
         .onAppear { model.refresh() }
+        .sheet(isPresented: $showAlphaSheet) { AlphaBuildsSheet(updater: updater) }
+    }
+}
+
+/// Explains alpha builds before anyone turns them on.
+struct AlphaBuildsSheet: View {
+    @ObservedObject var updater: Updater
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "flask")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.orange.gradient))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Alpha Builds").font(.headline)
+                    Text("Early versions of Disk Alert").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+
+            Text("Alpha builds are previews of upcoming changes, published before they reach the public release. They haven’t been fully tested, may be incomplete, and can change or stop working between builds. They aren’t recommended for everyday use.")
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("With this on, Check for Updates also tells you when a newer alpha is available. Alphas are never installed for you: each one is offered only when you check by hand, and only installs if you choose Install Alpha. Automatic checks still only offer public releases.")
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(.secondary)
+
+            Toggle(isOn: $updater.alphaOptIn) {
+                Text("Offer alpha builds")
+            }
+            .toggleStyle(.switch)
+            .padding(.vertical, 4)
+
+            Text(updater.isAlpha
+                 ? "You’re running \(updater.displayVersion). To go back, turn this off: the next public release will be offered as a normal update."
+                 : "Turning this off later keeps whatever version you have. If you’re on an alpha, the next public release replaces it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }
 
@@ -106,7 +165,7 @@ struct UpdatesSection: View {
                 Button("Check for Updates") { updater.check(userInitiated: true) }
                     .disabled(updater.state == .checking || updater.state == .downloading)
             } label: {
-                Text("Disk Alert \(updater.currentVersion)")
+                Text("Disk Alert \(updater.displayVersion)")
                 Text(updater.statusText)
             }
             Toggle(isOn: $updater.automatic) {

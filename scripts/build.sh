@@ -6,6 +6,10 @@ cd "$(dirname "$0")/.."
 
 VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
+# Set for alpha builds, e.g. "alpha.18". The app shows it next to the version and
+# CFBundleShortVersionString stays plain numbers, as macOS expects.
+PRERELEASE="${PRERELEASE:-}"
+FULL_VERSION="$VERSION${PRERELEASE:+-$PRERELEASE}"
 MIN_OS="15.0"
 OUT="build"
 APP="$OUT/Disk Alert.app"
@@ -56,6 +60,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+  <key>DAPrerelease</key><string>$PRERELEASE</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_OS</string>
   <key>LSUIElement</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
@@ -90,6 +95,6 @@ STAGE="$OUT/dmg"
 mkdir -p "$STAGE"
 ditto "$APP" "$STAGE/Disk Alert.app"
 ln -s /Applications "$STAGE/Applications"
-DMG="$OUT/Disk-Alert-$VERSION.dmg"
-hdiutil create -volname "Disk Alert $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+DMG="$OUT/Disk-Alert-$FULL_VERSION.dmg"
+hdiutil create -volname "Disk Alert $FULL_VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 echo "Done: $DMG"

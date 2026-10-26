@@ -2,8 +2,8 @@ name: Build and release
 
 on:
   push:
-    # main builds and publishes a release. claude/ branches only build and take screenshots,
-    # saved to the ci-logs-preview and screenshots-preview branches.
+    # main publishes a public release. claude/ branches publish an alpha (a GitHub pre-release,
+    # offered only to people who opt in) and save logs and screenshots to the -preview branches.
     branches: [main, 'claude/**']
   workflow_dispatch:
 
@@ -29,20 +29,28 @@ jobs:
         id: version
         run: |
           BASE="$(tr -d '[:space:]' < VERSION)"
-          LAST="$(git tag -l "v$BASE.*" | sort -V | tail -1)"
+          # Public releases only: alpha tags (v0.4.1-alpha.18) don't count.
+          LAST="$(git tag -l "v$BASE.*" | grep -E "^v${BASE//./\\.}\.[0-9]+$" | sort -V | tail -1 || true)"
           if [[ -n "$LAST" ]]; then
             PATCH=$(( ${LAST##*.} + 1 ))
           else
             PATCH=0
           fi
+          # An alpha is numbered as the public release it leads up to.
+          PRERELEASE=""
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then PRERELEASE="alpha.$GITHUB_RUN_NUMBER"; fi
+          FULL="$BASE.$PATCH${PRERELEASE:+-$PRERELEASE}"
           echo "version=$BASE.$PATCH" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "full=$FULL" >> "$GITHUB_OUTPUT"
           echo "last=$LAST" >> "$GITHUB_OUTPUT"
-          echo "Version $BASE.$PATCH (previous: ${LAST:-none})"
+          echo "Version $FULL (previous release: ${LAST:-none})"
 
       - name: Build app
         id: build
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           set -o pipefail
           chmod +x scripts/build.sh
@@ -53,7 +61,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OUTCOME: ${{ steps.build.outcome }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.version.outputs.full }}
         run: |
           mkdir -p /tmp/ci-logs
           cp build.log /tmp/ci-logs/build.log 2>/dev/null || echo "No log produced" > /tmp/ci-logs/build.log
@@ -100,3 +108,22 @@ jobs:
           } > notes.md
           gh release create "v$VERSION" build/*.dmg --target "$GITHUB_SHA" \
             --title "Disk Alert $VERSION" --notes-file notes.md --latest
+
+      - name: Publish alpha
+        if: github.ref != 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.full }}
+        run: |
+          {
+            echo "Alpha build from \`${GITHUB_REF_NAME}\`. Not fully tested and may be incomplete."
+            echo
+            echo "## Changes not yet in a public release"
+            git log --no-merges --format='- %s' origin/main..HEAD
+          } > notes.md
+          gh release create "v$VERSION" build/*.dmg --target "$GITHUB_SHA" \
+            --title "Disk Alert $VERSION" --notes-file notes.md --prerelease --latest=false
+          # Keep only the five newest alphas.
+          gh release list --limit 100 --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease)] | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
+          while read -r tag; do gh release delete "$tag" --cleanup-tag --yes; done

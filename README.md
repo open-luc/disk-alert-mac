@@ -19,6 +19,7 @@ A lightweight macOS menu bar app that notifies you when drives connect, eject, o
 - **Opens at login** in the menu bar (can be turned off in Settings).
 - **Respects Focus and Do Not Disturb**, like any other Mac notification.
 - **Updates itself.** Check for Updates in the menu bar or Settings installs the newest release from GitHub. Older versions stay available on the [Releases page](https://github.com/open-luc/disk-alert-mac/releases).
+- **Alpha builds (opt-in).** Early, untested versions for people who want to try changes first. Turn them on with "Alpha builds…" at the bottom of General; Check for Updates then mentions a newer alpha, and it only installs if you choose it.
 - **Runs in the background.** Alerts keep working even with the menu bar icon hidden. Turn them off with the switch in Settings.
 - **Never asks for drive access.** Drive name, size and free space come from macOS's own drive list, so Disk Alert never looks inside your drives.
 
