@@ -2,6 +2,8 @@
 
 A lightweight macOS menu bar app that notifies you when drives connect, eject, or get unplugged without ejecting. Custom sounds per drive, drive info at a glance, and alerts that keep running even when the app is closed.
 
+**macOS 15 Sequoia or later · Apple silicon and Intel**
+
 ## Features
 
 - **Connect, eject and unplugged alerts.** A native notification with the drive's name, and a separate warning when a drive is pulled out without ejecting first.
