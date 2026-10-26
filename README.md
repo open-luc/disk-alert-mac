@@ -5,6 +5,7 @@ A lightweight macOS menu bar app that notifies you when drives connect, eject, o
 ## Features
 
 - **Connect, eject and unplugged alerts.** A native notification with the drive's name, and a separate warning when a drive is pulled out without ejecting first.
+- **Tidy Notification Center.** Each drive keeps only its latest "connected" or "ejected" notification. "Unplugged" warnings stay until you dismiss them, with the date and time it happened, so a drive that keeps dropping out leaves a trail.
 - **Drive info.** Free space, capacity and format right in the notification.
 - **Drive types.** External drives, SD and memory cards, and disk images are recognized separately, each with its own sound or mute.
 - **Sounds per drive.** Give each drive its own sound, split it into separate connect and eject sounds, or mute it.

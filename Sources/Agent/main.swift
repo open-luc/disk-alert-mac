@@ -150,7 +150,7 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
             body = "Safe to unplug"
             Store.log(HistoryEvent(date: Date(), name: vol.name, kind: .ejected))
         case .unsafe:
-            body = "Unplugged before ejecting. Files may be damaged."
+            body = "Unplugged \(Self.stamp(Date())) without ejecting. Files may be damaged."
             Store.log(HistoryEvent(date: Date(), name: vol.name, kind: .unsafe))
         }
 
@@ -171,7 +171,9 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
         }
         content.subtitle = vol.name
         content.body = body
-        if event == .connect { content.userInfo = ["path": vol.url.path] }
+        var info: [String: Any] = ["drive": vol.id, "kind": Self.kind(event)]
+        if event == .connect { info["path"] = vol.url.path }
+        content.userInfo = info
 
         if soundName != "Off", let file = Sounds.url(for: soundName) {
             if s.playSoundDirectly {
@@ -181,16 +183,48 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
             }
         }
 
-        post(content)
+        post(content, replacingFor: event == .unsafe ? nil : vol.id)
 
         if event == .connect && s.openInFinder {
             showInFinder(vol.url)
         }
     }
 
-    private func post(_ content: UNMutableNotificationContent) {
+    private static func kind(_ event: Event) -> String {
+        switch event {
+        case .connect: return "connect"
+        case .eject: return "eject"
+        case .unsafe: return "unsafe"
+        }
+    }
+
+    /// "on Oct 26 at 3:42 PM", in the user's own date and time format.
+    private static func stamp(_ date: Date) -> String {
+        "on \(date.formatted(.dateTime.month(.abbreviated).day())) at \(date.formatted(date: .omitted, time: .shortened))"
+    }
+
+    /// Posts a notification. With a drive ID, that drive's earlier "connected" and "ejected"
+    /// notifications are cleared first, so Notification Center keeps only its latest one.
+    /// "Unplugged" warnings are never cleared, and nothing from before the drive's most recent
+    /// warning is either, so a drive that keeps dropping out leaves its whole trail.
+    private func post(_ content: UNMutableNotificationContent, replacingFor driveID: String? = nil) {
+        let center = UNUserNotificationCenter.current()
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in }
+        guard let driveID else {
+            center.add(request) { _ in }
+            return
+        }
+        center.getDeliveredNotifications { delivered in
+            let mine = delivered.filter { $0.request.content.userInfo["drive"] as? String == driveID }
+            let lastWarning = mine
+                .filter { $0.request.content.userInfo["kind"] as? String == "unsafe" }
+                .map(\.date).max() ?? .distantPast
+            let stale = mine
+                .filter { $0.request.content.userInfo["kind"] as? String != "unsafe" && $0.date > lastWarning }
+                .map(\.request.identifier)
+            if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
+            center.add(request) { _ in }
+        }
     }
 
     private func play(_ url: URL) {

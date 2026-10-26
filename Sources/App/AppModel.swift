@@ -78,7 +78,9 @@ final class AppModel: ObservableObject {
         let now = Date()
         drives = [
             KnownDrive(id: "a", name: "Media SSD", format: "APFS", capacity: 2_000_000_000_000, lastSeen: now, category: .drive),
-            KnownDrive(id: "b", name: "EOS_DIGITAL", format: "ExFAT", capacity: 128_000_000_000, lastSeen: now.addingTimeInterval(-3600), category: .memoryCard)
+            KnownDrive(id: "b", name: "EOS_DIGITAL", format: "ExFAT", capacity: 128_000_000_000, lastSeen: now.addingTimeInterval(-3600), category: .memoryCard),
+            KnownDrive(id: "c", name: "Backup Drive", format: "Mac OS Extended", capacity: 4_000_000_000_000, lastSeen: now.addingTimeInterval(-86_400), category: .drive),
+            KnownDrive(id: "d", name: "Thumb Drive", format: "ExFAT", capacity: 64_000_000_000, lastSeen: now.addingTimeInterval(-6 * 86_400), category: .drive)
         ]
         settings.driveRules["b"] = DriveRule(connect: "Hero", eject: "Default")
         mountedVolumes = [

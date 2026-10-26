@@ -162,6 +162,10 @@ struct RuleBlock: View {
 
 struct DrivesTab: View {
     @EnvironmentObject var model: AppModel
+    /// Drives start collapsed each time Settings opens.
+    @State var expanded: Set<String> = []
+    /// Starts scrolled to the bottom. Used for screenshots of "Your Drives".
+    var startAtBottom = false
 
     var body: some View {
         Form {
@@ -181,33 +185,76 @@ struct DrivesTab: View {
                 }
             }
 
-            if model.drives.isEmpty {
-                Section("Your drives") {
+            Section {
+                if model.drives.isEmpty {
                     Text("Drives show up here after they connect once.")
                         .foregroundStyle(.secondary)
-                }
-            } else {
-                ForEach(Array(model.drives.enumerated()), id: \.element.id) { i, drive in
-                    Section {
-                        RuleBlock(symbol: drive.category.symbol, title: drive.name, subtitle: subtitle(drive),
-                                  rule: model.ruleBinding(forDrive: drive.id),
-                                  defaultConnect: model.settings.fallbackSound(connect: true, category: drive.category),
-                                  defaultEject: model.settings.fallbackSound(connect: false, category: drive.category),
-                                  onForget: { confirmForget(drive) })
-                    } header: {
-                        if i == 0 { Text("Your drives") }
-                    } footer: {
-                        if i == model.drives.count - 1 {
-                            Text("“Default” follows the drive’s type, then General. “Mute” silences that alert. The − button forgets a drive and its sounds; it comes back the next time it’s plugged in.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
+                } else {
+                    ForEach(model.drives) { drive in
+                        DriveRow(drive: drive, expanded: expandedBinding(drive.id), onForget: { confirmForget(drive) })
                     }
+                }
+            } header: {
+                yourDrivesHeader
+            } footer: {
+                if !model.drives.isEmpty {
+                    Text("Click a drive to change its sounds. “Default” follows the drive’s type, then General. “Mute” silences that alert. The − button forgets a drive and its sounds; it comes back the next time it’s plugged in.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
         .formStyle(.grouped)
+        .defaultScrollAnchor(startAtBottom ? .bottom : .top)
         .frame(width: SettingsLayout.size.width, height: SettingsLayout.size.height)
         .onAppear { model.refresh() }
+    }
+
+    /// Set apart from the drive types above by a rule, a larger title and a count.
+    private var yourDrivesHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
+                .padding(.top, 10)
+                .padding(.bottom, 18)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Your Drives")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
+                if !model.drives.isEmpty {
+                    Text("\(model.drives.count)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(.quaternary))
+                }
+                Spacer()
+                if !model.drives.isEmpty {
+                    Button(expanded.isEmpty ? "Expand All" : "Collapse All") {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            expanded = expanded.isEmpty ? Set(model.drives.map(\.id)) : []
+                        }
+                    }
+                    .buttonStyle(.link)
+                    .font(.callout)
+                }
+            }
+            Text("Sounds for one specific drive. These override the drive types above.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func expandedBinding(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { expanded.contains(id) },
+            set: { open in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    if open { expanded.insert(id) } else { expanded.remove(id) }
+                }
+            }
+        )
     }
 
     private func confirmForget(_ drive: KnownDrive) {
@@ -218,13 +265,80 @@ struct DrivesTab: View {
         a.addButton(withTitle: "Cancel")
         if a.runModal() == .alertFirstButtonReturn { model.forgetDrive(drive.id) }
     }
+}
 
-    private func subtitle(_ drive: KnownDrive) -> String {
+/// One remembered drive: a single row that opens to show its sound pickers.
+struct DriveRow: View {
+    @EnvironmentObject var model: AppModel
+    let drive: KnownDrive
+    @Binding var expanded: Bool
+    let onForget: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button { expanded.toggle() } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .frame(width: 12)
+                    Image(systemName: drive.category.symbol)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.accentColor.gradient))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(drive.name)
+                        Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    if !expanded {
+                        Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(drive.name)
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            .accessibilityHint("Shows the sounds for this drive")
+
+            Button(action: onForget) {
+                Image(systemName: "minus.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Forget this drive")
+            .accessibilityLabel("Forget \(drive.name)")
+        }
+        if expanded {
+            let rule = model.ruleBinding(forDrive: drive.id)
+            SoundRow(title: "Connected", selection: rule.connectSound,
+                     leading: ["Default"], trailing: ["Mute"],
+                     defaultSound: model.settings.fallbackSound(connect: true, category: drive.category))
+                .padding(.leading, 22)
+            SoundRow(title: "Ejected", selection: rule.ejectSound,
+                     leading: ["Default"], trailing: ["Mute"],
+                     defaultSound: model.settings.fallbackSound(connect: false, category: drive.category))
+                .padding(.leading, 22)
+        }
+    }
+
+    private var subtitle: String {
         var parts: [String] = []
         if !drive.format.isEmpty { parts.append(drive.format) }
         if drive.capacity > 0 { parts.append(Format.bytes(drive.capacity)) }
         parts.append("seen " + drive.lastSeen.formatted(.relative(presentation: .named)))
         return parts.joined(separator: " · ")
+    }
+
+    /// The drive's own sounds at a glance, e.g. "Hero · Default", or "Default sounds".
+    private var summary: String {
+        let rule = model.settings.driveRules[drive.id] ?? DriveRule()
+        if rule.connectSound == "Default" && rule.ejectSound == "Default" { return "Default sounds" }
+        return "\(rule.connectSound) · \(rule.ejectSound)"
     }
 }
 

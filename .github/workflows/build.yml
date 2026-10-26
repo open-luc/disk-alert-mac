@@ -2,15 +2,20 @@ name: Build and release
 
 on:
   push:
-    branches: [main]
+    # main builds and publishes a release. claude/ branches only build and take screenshots,
+    # saved to the ci-logs-preview and screenshots-preview branches.
+    branches: [main, 'claude/**']
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: release
+  group: ${{ github.ref == 'refs/heads/main' && 'release' || format('preview-{0}', github.ref) }}
   cancel-in-progress: false
+
+env:
+  OUT_SUFFIX: ${{ github.ref != 'refs/heads/main' && '-preview' || '' }}
 
 jobs:
   build:
@@ -57,7 +62,7 @@ jobs:
           git init -q -b ci-logs
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add .
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Build ${GITHUB_RUN_NUMBER}: ${OUTCOME}"
-          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-logs
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "ci-logs:ci-logs${OUT_SUFFIX}"
 
       - name: Screenshots
         continue-on-error: true
@@ -76,9 +81,10 @@ jobs:
           git init -q -b screenshots
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add .
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Screenshots for ${GITHUB_SHA::7}"
-          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" screenshots
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "screenshots:screenshots${OUT_SUFFIX}"
 
       - name: Publish release
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
