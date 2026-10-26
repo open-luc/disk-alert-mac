@@ -8,11 +8,11 @@ A lightweight macOS menu bar app that notifies you when drives connect, eject, o
 - **Tidy Notification Center.** Each drive keeps only its latest "connected" or "ejected" notification. "Unplugged" warnings stay until you dismiss them, with the date and time it happened, so a drive that keeps dropping out leaves a trail.
 - **Drive info.** Free space, capacity and format right in the notification.
 - **Drive types.** External drives, SD and memory cards, and disk images are recognized separately, each with its own sound or mute.
-- **Sounds per drive.** Give each drive its own sound, split it into separate connect and eject sounds, or mute it.
+- **Sounds per drive.** Give each drive its own sound, split it into separate connect and eject sounds, or mute it. Your drives are listed compactly in Settings; click one to change its sounds.
 - **Hear sounds as you browse.** Move the pointer through a sound menu and each one plays, like System Settings.
 - **Click to show.** Clicking a "connected" notification shows the drive in Finder.
 - **Your own sounds.** Drag in any audio file. It is converted and saved to `~/Library/Sounds`.
-- **Menu bar.** See connected drives with free space, eject one, or eject all (with two confirmations).
+- **Menu bar.** See connected drives with free space, eject one, or eject all (with two confirmations). Disk images get their own slimmer section, marked read-only where they are.
 - **Show in Finder** when a drive connects (optional).
 - **Hide the menu bar icon** if you only want the alerts. Open Disk Alert again to bring it back.
 - **Light, Dark or System appearance.**
@@ -30,7 +30,9 @@ A lightweight macOS menu bar app that notifies you when drives connect, eject, o
 | ![Menu bar, light](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/menu-light.png) | ![Menu bar, dark](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/menu-dark.png) |
 | ![General settings, light](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/settings-general-light.png) | ![General settings, dark](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/settings-general-dark.png) |
 | ![Drives settings, light](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/settings-drives-light.png) | ![Drives settings, dark](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/settings-drives-dark.png) |
+| ![Your Drives, light](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/settings-your-drives-light.png) | ![Your Drives, dark](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/settings-your-drives-dark.png) |
 | ![Custom Sounds settings, light](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/settings-sounds-light.png) | ![Custom Sounds settings, dark](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/settings-sounds-dark.png) |
+| ![Alpha Builds, light](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/alpha-builds-light.png) | ![Alpha Builds, dark](https://raw.githubusercontent.com/open-luc/disk-alert-mac/screenshots/alpha-builds-dark.png) |
 
 ## Install
 
@@ -56,7 +58,7 @@ Settings, known drives and history are stored in `~/Library/Application Support/
 
 ## Uninstall
 
-Open Settings and click **Uninstall…**. It stops the agent, removes its settings, and moves the app to the Trash. Sounds you added stay in `~/Library/Sounds`.
+Open Settings and click **Uninstall Disk Alert…**. It stops the agent, removes its settings, and moves the app to the Trash. Sounds you added stay in `~/Library/Sounds`.
 
 ## Build from source
 
@@ -66,7 +68,7 @@ On a Mac with Xcode or the Command Line Tools:
 ./scripts/build.sh
 ```
 
-The app lands in `build/Disk Alert.app`, with an installer at `build/Disk-Alert-x.y.z.dmg`. Every push to `main` is built by GitHub Actions and published as a new release, with the patch number going up each time (major and minor come from the `VERSION` file).
+The app lands in `build/Disk Alert.app`, with an installer at `build/Disk-Alert-x.y.z.dmg`. Every push to `main` is built by GitHub Actions and published as a new release, with the patch number going up each time (major and minor come from the `VERSION` file). Pushes to `claude/` branches are published as alpha pre-releases, such as `0.4.1-alpha.21`, which only people who turned on alpha builds are offered.
 
 ## License
 
