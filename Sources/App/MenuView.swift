@@ -152,7 +152,7 @@ struct DriveTile: View {
     }
 }
 
-/// A disk image: one slim row with a purple disc, so it reads as different from a real drive.
+/// A disk image: one slim row with an indigo disc, so it reads as different from a real drive.
 struct DiskImageRow: View {
     @EnvironmentObject var model: AppModel
     let volume: MountedVolume
@@ -161,7 +161,7 @@ struct DiskImageRow: View {
         HStack(spacing: 10) {
             Image(systemName: "opticaldisc")
                 .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(Color.purple)
+                .foregroundStyle(Color.indigo)
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(volume.name)
