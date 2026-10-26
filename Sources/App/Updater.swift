@@ -82,9 +82,8 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func check(userInitiated: Bool) {
         guard state != .checking, state != .downloading, state != .installing else { return }
         state = .checking
-        // With alphas on, the whole list is needed: "latest" never includes pre-releases.
-        let path = alphaOptIn ? "releases?per_page=30" : "releases/latest"
-        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repo)/\(path)")!)
+        // The whole list, not "latest", which never includes alphas.
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repo)/releases?per_page=30")!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
@@ -92,7 +91,8 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
             DispatchQueue.main.async {
                 self.lastChecked = Date()
                 UserDefaults.standard.set(self.lastChecked, forKey: "lastUpdateCheck")
-                guard let data, error == nil, let releases = self.decode(data) else {
+                guard let data, error == nil,
+                      let releases = try? JSONDecoder().decode([Release].self, from: data) else {
                     self.state = .failed("Couldn’t reach GitHub.")
                     if userInitiated { self.alert("Couldn’t check for updates", "Check your internet connection and try again.") }
                     return
@@ -100,13 +100,6 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 self.handle(releases, userInitiated: userInitiated)
             }
         }.resume()
-    }
-
-    /// A list of releases, or the single latest release when alphas are off.
-    private func decode(_ data: Data) -> [Release]? {
-        if alphaOptIn { return try? JSONDecoder().decode([Release].self, from: data) }
-        guard let one = try? JSONDecoder().decode(Release.self, from: data) else { return nil }
-        return [one]
     }
 
     private func handle(_ releases: [Release], userInitiated: Bool) {
@@ -124,27 +117,33 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         state = .upToDate
         guard userInitiated else { return }
 
+        let versions = versionSummary(stable: stable, alpha: alpha)
         // Alphas are offered only when asked, and never pushed: OK is the default.
         if alphaOptIn, let alpha, Self.isNewer(alpha.version, than: currentVersion) {
-            offerAlpha(alpha)
+            offerAlpha(alpha, versions: versions)
             return
         }
-        if isAlpha {
-            alert("You’re up to date", "Disk Alert \(displayVersion) is the newest alpha build.")
-        } else {
-            alert("You’re up to date", "Disk Alert \(displayVersion) is the latest version.")
-        }
+        alert("You’re up to date", versions)
     }
 
-    private func offerAlpha(_ release: Release) {
+    /// Which version you have, and the newest public release and alpha, one per line.
+    /// The alpha line only shows once alpha builds are turned on.
+    private func versionSummary(stable: Release?, alpha: Release?) -> String {
+        var lines = ["You have: \(displayVersion)"]
+        lines.append("Latest public release: " + (stable.map { Self.display($0.version) } ?? "none"))
+        if alphaOptIn {
+            lines.append("Latest alpha: " + (alpha.map { Self.display($0.version) } ?? "none"))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func offerAlpha(_ release: Release, versions: String) {
         NSApp.activate(ignoringOtherApps: true)
         let alphaName = Self.display(release.version)
         let a = NSAlert()
         a.messageText = "You’re up to date"
-        var text = isAlpha
-            ? "You have Disk Alert \(displayVersion)."
-            : "Disk Alert \(displayVersion) is the latest public release."
-        text += "\n\nA newer alpha build is available: \(alphaName). Alpha builds haven’t been fully tested and may be incomplete."
+        var text = versions
+        text += "\n\nYou can install \(alphaName) if you like. Alpha builds haven’t been fully tested and may be incomplete."
         var notes = (release.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if notes.count > 500 { notes = String(notes.prefix(500)) + "…" }
         if !notes.isEmpty { text += "\n\n" + notes }
