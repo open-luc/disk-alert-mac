@@ -76,8 +76,34 @@ echo "History:"; history | sed 's/^/  /'
 echo "Agent output:"; sed 's/^/  /' "$WORK/agent.log"
 
 kill "$AGENT_PID" 2>/dev/null
+
+echo
+echo "== Ejecting a busy drive (what Try Again is for)"
+# The same calls the menu's Eject uses: NSWorkspace to eject, VolumeInfo to see it's still there.
+cat > "$WORK/main.swift" <<'SWIFT'
+import AppKit
+let url = URL(fileURLWithPath: CommandLine.arguments[1])
+do { try NSWorkspace.shared.unmountAndEjectDevice(at: url); print("ejected") }
+catch { print(VolumeInfo.isMounted(url.path) ? "busy" : "gone") }
+SWIFT
+hdiutil create -quiet -size 20m -fs HFS+ -volname "DA Busy" "$WORK/busy.dmg"
+hdiutil attach -quiet -nobrowse "$WORK/busy.dmg"
+if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/eject"; then
+  exec 3>"/Volumes/DA Busy/open file.txt"   # keep a file open on the drive
+  r=$("$WORK/eject" "/Volumes/DA Busy"); echo "  with a file open: $r"
+  if [ "$r" = busy ]; then pass "a drive with an open file fails to eject and is still there to retry"
+  else fail "a drive with an open file fails to eject and is still there to retry"; fi
+  exec 3>&-                                 # close it, as the alert asks
+  r=$("$WORK/eject" "/Volumes/DA Busy"); echo "  after closing it: $r"
+  if [ "$r" = ejected ]; then pass "trying again after closing the file ejects it"
+  else fail "trying again after closing the file ejects it"; fi
+else
+  fail "eject helper compiles"
+fi
+
 hdiutil detach -quiet "/Volumes/DA Before" 2>/dev/null
 hdiutil detach -quiet "/Volumes/DA Test" 2>/dev/null
+hdiutil detach -quiet -force "/Volumes/DA Busy" 2>/dev/null
 rm -rf "$SUPPORT" "$WORK"
 
 echo

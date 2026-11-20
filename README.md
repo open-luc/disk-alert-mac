@@ -15,7 +15,7 @@ A lightweight macOS menu bar app that notifies you when drives connect, eject, o
 - **Hear sounds as you browse.** Move the pointer through a sound menu and each one plays, like System Settings.
 - **Click to show.** Clicking a "connected" notification shows the drive in Finder.
 - **Your own sounds.** Drag in any audio file. It is converted and saved to `~/Library/Sounds`.
-- **Menu bar.** See connected drives with free space, eject one, or eject all (with two confirmations). Disk images get their own slimmer section, marked read-only where they are.
+- **Menu bar.** See connected drives with free space, eject one, or eject all (with two confirmations). If a drive is busy, Try Again retries the eject without going back to the menu. Disk images get their own slimmer section, marked read-only where they are.
 - **Show in Finder** when a drive connects (optional).
 - **Hide the menu bar icon** if you only want the alerts. Open Disk Alert again to bring it back.
 - **Light, Dark or System appearance.**

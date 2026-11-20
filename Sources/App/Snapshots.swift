@@ -29,9 +29,25 @@ enum Snapshots {
                    to: out.appendingPathComponent("alpha-builds-\(suffix).png"), look: look)
             render(SoundsTab().environmentObject(model), title: "Custom Sounds", to: out.appendingPathComponent("settings-sounds-\(suffix).png"), look: look)
             render(MenuView().environmentObject(model), title: nil, to: out.appendingPathComponent("menu-\(suffix).png"), look: look)
+            renderAlert(AppModel.ejectFailedAlert(names: ["Media SSD"]), to: out.appendingPathComponent("eject-failed-\(suffix).png"), look: look)
         }
         print("Snapshots written to \(out.path)")
         exit(0)
+    }
+
+    /// Captures a real alert window as it would appear on screen.
+    private static func renderAlert(_ alert: NSAlert, to url: URL, look: NSAppearance.Name) {
+        alert.window.appearance = NSAppearance(named: look)
+        alert.layout()
+        let window = alert.window
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFrontRegardless()
+        RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+        guard let view = window.contentView?.superview ?? window.contentView,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        window.orderOut(nil)
+        try? rep.representation(using: .png, properties: [:])?.write(to: url)
     }
 
     /// Lays the view out in an offscreen window, captures it at 2x, and frames it
