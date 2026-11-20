@@ -56,16 +56,24 @@ jobs:
           chmod +x scripts/build.sh
           BUILD_NUMBER="$GITHUB_RUN_NUMBER" ./scripts/build.sh 2>&1 | tee build.log
 
+      - name: Test
+        id: test
+        run: |
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee test.log
+
       - name: Save build log
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           OUTCOME: ${{ steps.build.outcome }}
+          TESTS: ${{ steps.test.outcome }}
           VERSION: ${{ steps.version.outputs.full }}
         run: |
           mkdir -p /tmp/ci-logs
           cp build.log /tmp/ci-logs/build.log 2>/dev/null || echo "No log produced" > /tmp/ci-logs/build.log
-          echo "run ${GITHUB_RUN_NUMBER} commit ${GITHUB_SHA} version ${VERSION} result ${OUTCOME}" > /tmp/ci-logs/STATUS
+          cp test.log /tmp/ci-logs/test.log 2>/dev/null || echo "Tests didn't run" > /tmp/ci-logs/test.log
+          echo "run ${GITHUB_RUN_NUMBER} commit ${GITHUB_SHA} version ${VERSION} result ${OUTCOME} tests ${TESTS}" > /tmp/ci-logs/STATUS
           cd /tmp/ci-logs
           git init -q -b ci-logs
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add .

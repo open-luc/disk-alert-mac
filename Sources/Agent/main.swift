@@ -24,15 +24,11 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
     private var ready = false
     private var players: [NSSound] = []
 
-    // Alerts that happen while the Mac is asleep, its screen is off or locked, or it has only
-    // just woken are held until someone is back at it. A drive plugged in during sleep shows up
-    // the moment the Mac wakes, often at the lock screen and before sound is working again, and
-    // its alert would otherwise make no sound.
+    // See AlertHold: alerts wait until someone is back at the Mac.
     private var asleep = false
     private var wokeAt = Date.distantPast
-    private var held: [(event: Event, vol: Volume, date: Date)] = []
+    private var hold = AlertHold<(event: Event, vol: Volume, date: Date)>()
     private var holdTimer: Timer?
-    private static let settleAfterWake: TimeInterval = 3
 
     func start() {
         let center = UNUserNotificationCenter.current()
@@ -171,22 +167,16 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
         return locked || !onConsole
     }
 
-    /// True when someone is at the Mac and its sound has had a moment to come back after waking.
     private var canAlertNow: Bool {
-        !asleep && !displayAsleep && !sessionLocked
-            && Date().timeIntervalSince(wokeAt) >= Self.settleAfterWake
+        PresenceState(asleep: asleep, displayAsleep: displayAsleep, locked: sessionLocked, wokeAt: wokeAt).canAlert()
     }
 
     /// Alerts now, or holds the alert until the Mac is awake and unlocked.
     private func report(_ event: Event, _ vol: Volume) {
-        if held.isEmpty && canAlertNow {
-            fire(event, vol, at: Date())
-            return
-        }
-        held.append((event, vol, Date()))
-        // The notifications above are the main signal; this catches anything they miss
-        // and waits out the moments right after waking.
-        if holdTimer == nil {
+        deliver(hold.add((event, vol, Date()), canAlert: canAlertNow))
+        // The wake and unlock notifications are the main signal; this catches anything they
+        // miss and waits out the moments right after waking.
+        if hold.isHolding && holdTimer == nil {
             holdTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
                 self?.deliverHeld()
             }
@@ -194,12 +184,15 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func deliverHeld() {
-        guard !held.isEmpty, canAlertNow else { return }
-        holdTimer?.invalidate()
-        holdTimer = nil
-        let waiting = held
-        held.removeAll()
-        for item in waiting { fire(item.event, item.vol, at: item.date) }
+        deliver(hold.release(canAlert: canAlertNow))
+    }
+
+    private func deliver(_ items: [(event: Event, vol: Volume, date: Date)]) {
+        if !hold.isHolding {
+            holdTimer?.invalidate()
+            holdTimer = nil
+        }
+        for item in items { fire(item.event, item.vol, at: item.date) }
     }
 
     func unmountRequested(_ disk: DADisk) {
