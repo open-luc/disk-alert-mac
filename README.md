@@ -7,10 +7,11 @@ A lightweight macOS menu bar app that notifies you when drives connect, eject, o
 ## Features
 
 - **Connect, eject and unplugged alerts.** A native notification with the drive's name, and a separate warning when a drive is pulled out without ejecting first.
+- **Works across sleep.** Plug a drive in while your Mac is asleep and the alert, sound included, waits until you've woken and unlocked it.
 - **Tidy Notification Center.** Each drive keeps only its latest "connected" or "ejected" notification. "Unplugged" warnings stay until you dismiss them, with the date and time it happened, so a drive that keeps dropping out leaves a trail.
 - **Drive info.** Free space, capacity and format right in the notification.
 - **Drive types.** External drives, SD and memory cards, and disk images are recognized separately, each with its own sound or mute.
-- **Sounds per drive.** Give each drive its own sound, split it into separate connect and eject sounds, or mute it. Your drives are listed compactly in Settings; click one to change its sounds.
+- **Sounds per drive.** Give each drive its own sound, split it into separate connect and eject sounds, or mute it. Your drives are listed compactly in Settings, including any that were already plugged in when you installed Disk Alert; click one to change its sounds.
 - **Hear sounds as you browse.** Move the pointer through a sound menu and each one plays, like System Settings.
 - **Click to show.** Clicking a "connected" notification shows the drive in Finder.
 - **Your own sounds.** Drag in any audio file. It is converted and saved to `~/Library/Sounds`.

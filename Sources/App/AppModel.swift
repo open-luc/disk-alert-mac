@@ -61,6 +61,7 @@ final class AppModel: ObservableObject {
         }
         if settings.enabled { AgentControl.enable() }
         loginStatus = SMAppService.mainApp.status
+        Self.rememberPluggedInDrives()
         refresh()
 
         let nc = NSWorkspace.shared.notificationCenter
@@ -116,6 +117,22 @@ final class AppModel: ObservableObject {
                                  free: v.space?.free ?? 0, total: v.space?.total ?? 0,
                                  category: match?.category ?? v.category, readOnly: v.readOnly)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Adds drives that are already plugged in to the drive list, so a drive connected before
+    /// Disk Alert was installed doesn't have to be unplugged and plugged back in to show up.
+    /// The agent does the same when it starts; this makes them appear the moment the app opens.
+    static func rememberPluggedInDrives() {
+        var known = Store.drives
+        var added = false
+        for v in VolumeInfo.mounted() where v.category != .diskImage {
+            let id = v.uuid ?? v.name
+            guard known[id] == nil else { continue }
+            known[id] = KnownDrive(id: id, name: v.name, format: v.format, capacity: v.space?.total ?? 0,
+                                   lastSeen: Date(), category: v.category)
+            added = true
+        }
+        if added { Store.save(known, to: DiskAlert.drivesURL) }
     }
 
     /// Forgets a drive and its sounds. It reappears the next time it connects.

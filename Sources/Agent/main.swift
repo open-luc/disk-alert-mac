@@ -24,6 +24,16 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
     private var ready = false
     private var players: [NSSound] = []
 
+    // Alerts that happen while the Mac is asleep, its screen is off or locked, or it has only
+    // just woken are held until someone is back at it. A drive plugged in during sleep shows up
+    // the moment the Mac wakes, often at the lock screen and before sound is working again, and
+    // its alert would otherwise make no sound.
+    private var asleep = false
+    private var wokeAt = Date.distantPast
+    private var held: [(event: Event, vol: Volume, date: Date)] = []
+    private var holdTimer: Timer?
+    private static let settleAfterWake: TimeInterval = 3
+
     func start() {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
@@ -51,6 +61,7 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
         }, ctx)
 
         DASessionScheduleWithRunLoop(session, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        watchSleepAndLock()
 
         // Drives already plugged in when the agent starts are noted silently.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.ready = true }
@@ -97,12 +108,15 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
         if let vol = volume(for: disk) {
             if mounted[bsd] == nil {
                 mounted[bsd] = vol
-                if ready { fire(.connect, vol) }
+                // Drives already plugged in when the agent starts make no sound, but they still
+                // go in the drive list, so nobody has to unplug a drive to set its sounds.
+                remember(vol)
+                if ready { report(.connect, vol) }
             }
         } else if let vol = mounted.removeValue(forKey: bsd) {
             // The volume is no longer mounted.
             let proper = ejectRequested.remove(bsd) != nil || vol.category == .diskImage
-            fire(proper ? .eject : .unsafe, vol)
+            report(proper ? .eject : .unsafe, vol)
         }
     }
 
@@ -111,8 +125,81 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
         ejectRequested.remove(bsd)
         if let vol = mounted.removeValue(forKey: bsd) {
             // Gone while still mounted: unplugged without ejecting.
-            fire(vol.category == .diskImage ? .eject : .unsafe, vol)
+            report(vol.category == .diskImage ? .eject : .unsafe, vol)
         }
+    }
+
+    private func remember(_ vol: Volume) {
+        guard vol.category != .diskImage else { return }
+        let d = details(vol)
+        Store.remember(KnownDrive(id: vol.id, name: vol.name, format: d.format, capacity: d.total,
+                                  lastSeen: Date(), category: vol.category))
+    }
+
+    // MARK: Sleep, wake and the lock screen
+
+    private func watchSleepAndLock() {
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.asleep = true
+        }
+        ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.asleep = false
+            self?.wokeAt = Date()
+            self?.deliverHeld()
+        }
+        ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.deliverHeld()
+        }
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            // Nobody unlocks a sleeping Mac, so a missed wake notification can't hold alerts forever.
+            self?.asleep = false
+            self?.deliverHeld()
+        }
+    }
+
+    private var displayAsleep: Bool {
+        CGDisplayIsAsleep(CGMainDisplayID()) != 0
+    }
+
+    /// Whether the screen is locked, or another user is using the Mac.
+    private var sessionLocked: Bool {
+        guard let info = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        let locked = (info["CGSSessionScreenIsLocked"] as? Bool) ?? false
+        let onConsole = (info["kCGSSessionOnConsoleKey"] as? Bool) ?? true
+        return locked || !onConsole
+    }
+
+    /// True when someone is at the Mac and its sound has had a moment to come back after waking.
+    private var canAlertNow: Bool {
+        !asleep && !displayAsleep && !sessionLocked
+            && Date().timeIntervalSince(wokeAt) >= Self.settleAfterWake
+    }
+
+    /// Alerts now, or holds the alert until the Mac is awake and unlocked.
+    private func report(_ event: Event, _ vol: Volume) {
+        if held.isEmpty && canAlertNow {
+            fire(event, vol, at: Date())
+            return
+        }
+        held.append((event, vol, Date()))
+        // The notifications above are the main signal; this catches anything they miss
+        // and waits out the moments right after waking.
+        if holdTimer == nil {
+            holdTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                self?.deliverHeld()
+            }
+        }
+    }
+
+    private func deliverHeld() {
+        guard !held.isEmpty, canAlertNow else { return }
+        holdTimer?.invalidate()
+        holdTimer = nil
+        let waiting = held
+        held.removeAll()
+        for item in waiting { fire(item.event, item.vol, at: item.date) }
     }
 
     func unmountRequested(_ disk: DADisk) {
@@ -132,27 +219,23 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
         return (parts.joined(separator: " · "), format, total)
     }
 
-    func fire(_ event: Event, _ vol: Volume) {
+    /// Posts the alert for something that happened at `date`.
+    func fire(_ event: Event, _ vol: Volume, at date: Date) {
         let s = Store.settings
         guard s.enabled else { return }
 
         var body = ""
         switch event {
         case .connect:
-            let d = details(vol)
-            if vol.category != .diskImage {
-                Store.remember(KnownDrive(id: vol.id, name: vol.name, format: d.format, capacity: d.total,
-                                          lastSeen: Date(), category: vol.category))
-            }
-            if s.showInfo { body = d.info }
-            Store.log(HistoryEvent(date: Date(), name: vol.name, kind: .connected))
+            if s.showInfo { body = details(vol).info }
+            Store.log(HistoryEvent(date: date, name: vol.name, kind: .connected))
         case .eject:
             // A disk image has nothing to unplug.
             body = vol.category == .diskImage ? "Disk image closed" : "Safe to unplug"
-            Store.log(HistoryEvent(date: Date(), name: vol.name, kind: .ejected))
+            Store.log(HistoryEvent(date: date, name: vol.name, kind: .ejected))
         case .unsafe:
-            body = "Unplugged \(Self.stamp(Date())) without ejecting. Files may be damaged."
-            Store.log(HistoryEvent(date: Date(), name: vol.name, kind: .unsafe))
+            body = "Unplugged \(Self.stamp(date)) without ejecting. Files may be damaged."
+            Store.log(HistoryEvent(date: date, name: vol.name, kind: .unsafe))
         }
 
         // Sound: an unplugged warning always uses its own sound, even for a muted drive.
@@ -186,7 +269,7 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
 
         post(content, replacingFor: event == .unsafe ? nil : vol.id)
 
-        if event == .connect && s.openInFinder {
+        if event == .connect && s.openInFinder && VolumeInfo.isMounted(vol.url.path) {
             showInFinder(vol.url)
         }
     }
