@@ -44,9 +44,21 @@ enum Snapshots {
         window.orderFrontRegardless()
         RunLoop.main.run(until: Date().addingTimeInterval(1.0))
         guard let view = window.contentView?.superview ?? window.contentView,
-              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
-        view.cacheDisplay(in: view.bounds, to: rep)
+              let content = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: content)
         window.orderOut(nil)
+
+        // The alert's frosted background isn't part of the capture, which leaves Dark mode's white
+        // text on nothing. Lay it over the window background color, as it looks on screen.
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        (NSAppearance(named: look) ?? NSAppearance.currentDrawing()).performAsCurrentDrawingAppearance {
+            NSColor.windowBackgroundColor.setFill()
+            view.bounds.fill()
+        }
+        content.draw(in: view.bounds)
+        NSGraphicsContext.restoreGraphicsState()
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
     }
 
