@@ -1,0 +1,3 @@
+# Commits that touched the app's code without changing what it does, for commits made before
+# the "[no app change]" message marker existed. One commit hash (or its first 7+ characters) per line.
+6737879  Test holding alerts (moved code so it could be tested; the app behaves the same)

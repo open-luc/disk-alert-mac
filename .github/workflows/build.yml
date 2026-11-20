@@ -99,6 +99,9 @@ jobs:
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Screenshots for ${GITHUB_SHA::7}"
           git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "screenshots:screenshots${OUT_SUFFIX}"
 
+      # A new version is published only when the app itself changed (see scripts/app-changes.sh),
+      # so tests, CI and README edits never show up as an update. Running the workflow by hand
+      # (workflow_dispatch) always publishes.
       - name: Publish release
         if: github.ref == 'refs/heads/main'
         env:
@@ -106,10 +109,14 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           LAST: ${{ steps.version.outputs.last }}
         run: |
-          RANGE="${LAST:+$LAST..}HEAD"
+          CHANGES="$(scripts/app-changes.sh $LAST)"
+          if [[ -z "$CHANGES" && "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
+            echo "::notice::The app hasn't changed since $LAST, so no new release."
+            exit 0
+          fi
           {
             echo "## What's new"
-            git log --no-merges --format='- %s' $RANGE
+            echo "${CHANGES:-- Rebuilt, no changes to the app}"
             echo
             echo "## Install"
             echo "Download **Disk-Alert-$VERSION.dmg**, open it and drag Disk Alert into Applications. Already installed? Use **Check for Updates** in the menu bar."
@@ -123,11 +130,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.full }}
         run: |
+          SINCE_MAIN="$(scripts/app-changes.sh origin/main)"
+          LAST_ALPHA="$(gh release list --limit 100 --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease)] | sort_by(.createdAt) | last | .tagName // ""')"
+          SINCE_ALPHA="new"
+          if [[ -n "$LAST_ALPHA" ]] && git rev-parse -q --verify "refs/tags/$LAST_ALPHA^{commit}" > /dev/null; then
+            SINCE_ALPHA="$(scripts/app-changes.sh "$LAST_ALPHA")"
+          fi
+          if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
+            if [[ -z "$SINCE_MAIN" ]]; then
+              echo "::notice::The app is the same as the public release, so no alpha."
+              exit 0
+            fi
+            if [[ -z "$SINCE_ALPHA" ]]; then
+              echo "::notice::The app hasn't changed since $LAST_ALPHA, so no new alpha."
+              exit 0
+            fi
+          fi
           {
             echo "Alpha build from \`${GITHUB_REF_NAME}\`. Not fully tested and may be incomplete."
             echo
             echo "## Changes not yet in a public release"
-            git log --no-merges --format='- %s' origin/main..HEAD
+            echo "${SINCE_MAIN:-- Rebuilt, no changes to the app}"
           } > notes.md
           gh release create "v$VERSION" build/*.dmg --target "$GITHUB_SHA" \
             --title "Disk Alert $VERSION" --notes-file notes.md --prerelease --latest=false
