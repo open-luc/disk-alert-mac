@@ -108,11 +108,11 @@ enum UITest {
 
     private static func find(_ title: String, in element: Any, depth: Int = 0) -> NSRect? {
         guard depth < 60, let e = element as? NSAccessibilityProtocol else { return nil }
-        let texts = [e.accessibilityLabel?() ?? nil, e.accessibilityTitle?() ?? nil].compactMap { $0 }
-        if (e.accessibilityRole?() ?? nil) == .button, texts.contains(title) {
-            return e.accessibilityFrame?() ?? nil
+        let texts = [e.accessibilityLabel ?? nil, e.accessibilityTitle ?? nil].compactMap { $0 }
+        if (e.accessibilityRole ?? nil) == .button, texts.contains(title) {
+            return e.accessibilityFrame
         }
-        for child in (e.accessibilityChildren?() ?? nil) ?? [] {
+        for child in (e.accessibilityChildren ?? nil) ?? [] {
             if let found = find(title, in: child, depth: depth + 1) { return found }
         }
         return nil
@@ -120,10 +120,10 @@ enum UITest {
 
     private static func dump(_ element: Any, depth: Int) {
         guard depth < 12, let e = element as? NSAccessibilityProtocol else { return }
-        let role = (e.accessibilityRole?() ?? nil)?.rawValue ?? "?"
-        let label = (e.accessibilityLabel?() ?? nil) ?? (e.accessibilityTitle?() ?? nil) ?? ""
+        let role = (e.accessibilityRole ?? nil)?.rawValue ?? "?"
+        let label = (e.accessibilityLabel ?? nil) ?? (e.accessibilityTitle ?? nil) ?? ""
         print(String(repeating: "  ", count: depth + 1) + role + " " + label)
-        for child in (e.accessibilityChildren?() ?? nil) ?? [] { dump(child, depth: depth + 1) }
+        for child in (e.accessibilityChildren ?? nil) ?? [] { dump(child, depth: depth + 1) }
     }
 
     // MARK: Reporting
