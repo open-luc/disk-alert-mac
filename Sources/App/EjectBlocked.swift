@@ -312,9 +312,11 @@ struct EjectBlockedView: View {
     private func wide(_ title: String, prominent: Bool = false, destructive: Bool = false,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
+            // Only Force Eject sets its own color. The default button's text is left to macOS,
+            // which keeps it readable when this window isn't in front (the button turns grey then).
             Text(title)
                 .fontWeight(.semibold)
-                .foregroundStyle(destructive ? Color.red : (prominent ? Color.white : Color.primary))
+                .foregroundStyle(destructive ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.primary))
                 .frame(maxWidth: .infinity)
         }
         .controlSize(.large)

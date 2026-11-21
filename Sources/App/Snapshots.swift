@@ -51,7 +51,7 @@ enum Snapshots {
         - Offer Try Again when a drive can't be ejected
         - Hold alerts until the Mac is awake and unlocked; list drives already plugged in
         """
-        let alpha = Updater.Release(tag_name: "v0.5.0-alpha.31", name: nil, body: notes, html_url: "", assets: [],
+        let alpha = Updater.Release(tag_name: "v0.5.0-alpha.40", name: nil, body: notes, html_url: "", assets: [],
                                     prerelease: true, draft: false)
         let stable = Updater.Release(tag_name: "v0.4.1", name: nil, body: nil, html_url: "", assets: [],
                                      prerelease: false, draft: false)
