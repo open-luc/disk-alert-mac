@@ -155,6 +155,10 @@ enum UITest {
     /// records its button frames itself.)
     @discardableResult
     private static func click(_ title: String, in window: NSWindow) -> Bool {
+        // Finish any pending layout first, so the button's recorded position is current.
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         guard let session = EjectSession.open.first, let frame = session.buttonFrames[title],
               let content = window.contentView else {
             check(false, "finds the \(title) button (knows of: \(EjectSession.open.first?.buttonFrames.keys.sorted() ?? []))")
