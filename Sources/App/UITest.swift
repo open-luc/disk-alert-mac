@@ -54,8 +54,17 @@ enum UITest {
             let needed = session.frameSize().height
             let actual = window.frame.height
             if let content = window.contentView {
-                print(String(format: "      (window %.0f, content view %.0f, layout area %.0f, safe area top %.0f)",
-                             window.frame.height, content.frame.height, window.contentLayoutRect.height, content.safeAreaInsets.top))
+                print(String(format: "      (window %.0f, content view %.0f, layout area %.0f, safe area top %.0f, min size %.0f, content min %.0f, fitting %.0f)",
+                             window.frame.height, content.frame.height, window.contentLayoutRect.height, content.safeAreaInsets.top,
+                             window.minSize.height, window.contentMinSize.height, content.fittingSize.height))
+                // Ask for a few heights and read back what macOS actually applies.
+                let original = window.frame
+                for h in [300.0, needed, 600.0] {
+                    var f = original; f.size.height = h
+                    window.setFrame(f, display: false)
+                    print(String(format: "      (asked for %.0f, got %.0f)", h, window.frame.height))
+                }
+                window.setFrame(original, display: false)
             }
             check(abs(actual - needed) < 4, String(format: "the window fits its content, no empty space (%.0f points tall, content needs %.0f)", actual, needed))
             check(actual < 700, String(format: "and isn't oversized (%.0f points tall)", actual))
