@@ -163,6 +163,10 @@ enum UITest {
         // The content view's coordinates start at the top left; the window's at the bottom left.
         let inContent = NSPoint(x: frame.midX, y: content.isFlipped ? frame.midY : content.bounds.height - frame.midY)
         let inWindow = content.convert(inContent, to: nil)
+        print(String(format: "      (click %@: frame y %.0f–%.0f, content %.0f tall, flipped %@, point in window y %.0f, window %.0f tall; all: %@)",
+                     title, frame.minY, frame.maxY, content.bounds.height, content.isFlipped ? "yes" : "no", inWindow.y,
+                     window.frame.height,
+                     session.buttonFrames.map { "\($0.key) \(Int($0.value.minY))" }.sorted().joined(separator: ", ")))
         post(click: window.convertPoint(toScreen: inWindow), in: window)
         return true
     }
