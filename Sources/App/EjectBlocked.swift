@@ -459,7 +459,6 @@ struct EjectBlockedView: View {
         }
         .padding(EdgeInsets(top: 22, leading: 20, bottom: 18, trailing: 20))
         .frame(width: 380)
-        .onPreferenceChange(ButtonFrames.self) { session.buttonFrames = $0 }
     }
 
     /// Up to five rows show in full; more scroll inside the list, so the window never
@@ -550,18 +549,10 @@ struct EjectBlockedView: View {
         }
         .controlSize(.large)
         .buttonStyle(ProminenceStyle(prominent: prominent))
-        .background(GeometryReader { g in
-            Color.clear.preference(key: ButtonFrames.self,
-                                   value: [Self.frameKey(title): g.frame(in: .global)])
-        })
-    }
-}
-
-/// Where each button is drawn, by title.
-private struct ButtonFrames: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue()) { $1 }
+        // Where the button is, kept current for the UI test as the layout changes.
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { [session] rect in
+            session.buttonFrames[Self.frameKey(title)] = rect
+        }
     }
 }
 
