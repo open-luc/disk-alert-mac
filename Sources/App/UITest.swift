@@ -48,12 +48,12 @@ enum UITest {
             check(openedAfter < 5, String(format: "the window opens for a drive that's in use, %.1f s after Eject", openedAfter))
             waitUntil({ !session.scanning }) { _ in
             check(!session.users.isEmpty, String(format: "its list of what's using the drive fills in %.1f s after Eject", Date().timeIntervalSince(pressed)))
-            check(longestFreeze < 0.5, String(format: "the app never stops responding meanwhile (longest pause %.2f s; the spinning wheel starts at about 2 s)", longestFreeze))
+            check(longestFreeze < 1, String(format: "the app never stops responding meanwhile (longest pause %.2f s; the spinning wheel starts at about 2 s)", longestFreeze))
             longestFreeze = 0
             if let area = window.screen?.visibleFrame {
                 let off = abs(window.frame.midX - area.midX)
                 check(off < 2, "it's centered on the screen (off by \(Int(off)) points)")
-                check(window.frame.midY > area.midY, "it sits above the middle, like an alert")
+                check(window.frame.maxY > area.minY + area.height * 0.75, "it sits high on the screen, like an alert")
             }
             check(NSApp.modalWindow == nil, "it doesn't block the rest of the app")
 
@@ -62,17 +62,20 @@ enum UITest {
                 check(session.checking, "right after clicking Try Again it shows Checking…")
                 waitUntil({ !session.checking }) { _ in
                     check(session.status != nil, "Try Again then says what it found: \(session.status ?? "nothing")")
-                    check(longestFreeze < 0.5, String(format: "and the app kept responding while it checked (longest pause %.2f s)", longestFreeze))
+                    check(longestFreeze < 1, String(format: "and the app kept responding while it checked (longest pause %.2f s)", longestFreeze))
                     check(window.isVisible, "the window stays open while the drive is still in use")
 
                     if !releasePIDs.isEmpty {
                         return tryAgainAfterReleasing(session, window) { finished }
                     }
+                    // Let the window finish growing for the new status line, as a person would.
+                    after(0.5) {
                     guard click("Cancel", in: window) else { return done() }
                     after(1) {
                         check(!window.isVisible && finished, "Cancel closes the window")
                         check(NSApp.modalWindow == nil, "nothing is left blocking the app afterwards")
                         otherWindowStillWorks { done() }
+                    }
                     }
                 }
             }

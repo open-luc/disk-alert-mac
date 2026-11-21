@@ -278,8 +278,9 @@ final class EjectSession: ObservableObject {
         w.setContentSize(size)
         if let area = screen?.visibleFrame {
             let frame = w.frame
-            // Where macOS puts alerts: the window's middle about 60% of the way up.
-            let top = min(area.maxY - 20, area.minY + area.height * 0.6 + frame.height / 2)
+            // Where macOS puts alerts: high on the screen. The top edge stays here and the window
+            // grows downward as its list fills in, so it never jumps.
+            let top = area.maxY - area.height * 0.18
             w.setFrameOrigin(NSPoint(x: area.midX - frame.width / 2, y: max(area.minY, top - frame.height)))
         }
         anchorTop = w.frame.maxY
@@ -425,6 +426,8 @@ struct EjectBlockedView: View {
         }
         .padding(EdgeInsets(top: 22, leading: 20, bottom: 18, trailing: 20))
         .frame(width: 380)
+        // Pinned to the top, so nothing moves in the moment before the window resizes to fit.
+        .frame(maxHeight: .infinity, alignment: .top)
         .onPreferenceChange(ButtonFrames.self) { session.buttonFrames = $0 }
     }
 
