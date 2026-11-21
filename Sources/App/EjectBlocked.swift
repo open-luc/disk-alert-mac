@@ -202,6 +202,9 @@ final class EjectSession: ObservableObject {
     }
 
     private func finish() {
+        if let window, NSApp.modalWindow === window { NSApp.stopModal() }
+        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
+        resizeObserver = nil
         window?.orderOut(nil)
         window = nil
         Self.open.removeAll { $0 === self }
@@ -210,6 +213,9 @@ final class EjectSession: ObservableObject {
 
     // MARK: Window
 
+    /// Shown the way a macOS alert is: centered on the screen you're using, a little above the
+    /// middle, and holding Disk Alert's attention until you choose (other apps stay usable, so you
+    /// can go and close files). When it grows, its top stays put.
     private func show() {
         let host = NSHostingController(rootView: EjectBlockedView(session: self))
         host.sizingOptions = [.preferredContentSize]
@@ -219,12 +225,42 @@ final class EjectSession: ObservableObject {
         w.titlebarAppearsTransparent = true
         w.isMovableByWindowBackground = true
         w.isReleasedWhenClosed = false
-        w.level = .floating
-        w.center()
+        w.level = .modalPanel
+        w.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+
+        // Size it to its content before placing it, so it lands centered.
+        host.view.layoutSubtreeIfNeeded()
+        w.setContentSize(host.view.fittingSize)
+        let mouse = NSEvent.mouseLocation
+        screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+        if let area = screen?.visibleFrame {
+            let size = w.frame.size
+            let x = area.midX - size.width / 2
+            // Where macOS puts alerts: the window's middle about 60% of the way up.
+            let top = min(area.maxY - 20, area.minY + area.height * 0.6 + size.height / 2)
+            w.setFrameOrigin(NSPoint(x: x, y: max(area.minY, top - size.height)))
+        }
+        anchorTop = w.frame.maxY
+        resizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification, object: w, queue: .main) { [weak self] _ in self?.keepTop() }
+
         window = w
         Self.open.append(self)
         NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
+        NSApp.runModal(for: w)
+    }
+
+    private var screen: NSScreen?
+    private var anchorTop: CGFloat = 0
+    private var resizeObserver: NSObjectProtocol?
+
+    /// Keeps the top edge where it was when the content grows or shrinks, and the window on screen.
+    private func keepTop() {
+        guard let window, let area = screen?.visibleFrame else { return }
+        var origin = window.frame.origin
+        origin.y = max(area.minY, min(anchorTop, area.maxY) - window.frame.height)
+        if origin != window.frame.origin { window.setFrameOrigin(origin) }
     }
 
     // MARK: Wording
