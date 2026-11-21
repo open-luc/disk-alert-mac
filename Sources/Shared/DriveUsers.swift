@@ -217,8 +217,9 @@ enum ForceEject {
             let why = unmount.output.trimmingCharacters(in: .whitespacesAndNewlines)
             return why.isEmpty ? "macOS couldn’t unmount it." : why
         }
-        // Unmounted is already safe to unplug; ejecting also powers the drive down where it can.
-        if let disk { DriveUsers.run("/usr/sbin/diskutil", ["eject", disk]) }
+        // Unmounted is already safe to unplug, so this returns now. Ejecting, which powers the drive
+        // down where it can, carries on in the background.
+        if let disk { DispatchQueue.global(qos: .utility).async { DriveUsers.run("/usr/sbin/diskutil", ["eject", disk]) } }
         return nil
     }
 }

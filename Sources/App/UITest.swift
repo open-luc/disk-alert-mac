@@ -28,14 +28,28 @@ enum UITest {
         let volume = MountedVolume(url: URL(fileURLWithPath: path), name: (path as NSString).lastPathComponent,
                                    free: 0, total: 0, category: .drive)
         var finished = false
+        let pressed = Date()
+        // Measures how long the app ever stops responding: a timer that should tick every 0.05 s.
+        var lastTick = Date(), longestFreeze = 0.0
+        let ticker = Timer(timeInterval: 0.05, repeats: true) { _ in
+            longestFreeze = max(longestFreeze, Date().timeIntervalSince(lastTick))
+            lastTick = Date()
+        }
+        RunLoop.main.add(ticker, forMode: .common)
         EjectSession.eject([volume]) { finished = true }
 
-        after(2) {
-            guard let session = EjectSession.open.first, let window = session.shownWindow, window.isVisible else {
+        // Waits for the window, then for its list, timing both from the moment Eject was pressed.
+        waitUntil({ EjectSession.open.first?.shownWindow?.isVisible == true }) { opened in
+            guard opened, let session = EjectSession.open.first, let window = session.shownWindow else {
                 check(false, "the window opens for a drive that's in use")
                 return done()
             }
-            check(true, "the window opens for a drive that's in use")
+            let openedAfter = Date().timeIntervalSince(pressed)
+            check(openedAfter < 5, String(format: "the window opens for a drive that's in use, %.1f s after Eject", openedAfter))
+            waitUntil({ !session.scanning }) { _ in
+            check(!session.users.isEmpty, String(format: "its list of what's using the drive fills in %.1f s after Eject", Date().timeIntervalSince(pressed)))
+            check(longestFreeze < 0.5, String(format: "the app never stops responding meanwhile (longest pause %.2f s; the spinning wheel starts at about 2 s)", longestFreeze))
+            longestFreeze = 0
             if let area = window.screen?.visibleFrame {
                 let off = abs(window.frame.midX - area.midX)
                 check(off < 2, "it's centered on the screen (off by \(Int(off)) points)")
@@ -46,8 +60,9 @@ enum UITest {
             guard click("Try Again", in: window) else { return done() }
             after(0.2) {
                 check(session.checking, "right after clicking Try Again it shows Checking…")
-                after(2.5) {
+                waitUntil({ !session.checking }) { _ in
                     check(session.status != nil, "Try Again then says what it found: \(session.status ?? "nothing")")
+                    check(longestFreeze < 0.5, String(format: "and the app kept responding while it checked (longest pause %.2f s)", longestFreeze))
                     check(window.isVisible, "the window stays open while the drive is still in use")
 
                     if !releasePIDs.isEmpty {
@@ -60,6 +75,7 @@ enum UITest {
                         otherWindowStillWorks { done() }
                     }
                 }
+            }
             }
         }
     }
@@ -144,6 +160,17 @@ enum UITest {
     private static func check(_ ok: Bool, _ what: String) {
         print("\(ok ? "PASS" : "FAIL")  \(what)")
         if !ok { failures += 1 }
+    }
+
+    /// Checks every 0.1 s until the condition holds (true) or 15 s pass (false).
+    private static func waitUntil(_ condition: @escaping () -> Bool, then next: @escaping (Bool) -> Void) {
+        let deadline = Date().addingTimeInterval(15)
+        func poll() {
+            if condition() { return next(true) }
+            if Date() > deadline { return next(false) }
+            after(0.1, poll)
+        }
+        poll()
     }
 
     private static func after(_ seconds: Double, _ work: @escaping () -> Void) {

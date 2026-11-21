@@ -12,6 +12,8 @@ final class EjectSession: ObservableObject {
     @Published private(set) var phase: Phase = .blocked
     @Published private(set) var error: String?
     @Published private(set) var checking = false     // a retry is running: the button shows a spinner
+    @Published private(set) var scanning = false     // finding what's using the drive
+    @Published private(set) var forcing = false      // Force Eject is running
     @Published private(set) var status: String?      // what the last retry found
     @Published var showDifferences = false
     /// Where each button is drawn, in the window's content view from its top left. For the UI test.
@@ -44,13 +46,21 @@ final class EjectSession: ObservableObject {
     }
 
     /// Ejects the drives. Any that won't eject get the window.
+    /// Ejects the drives without holding up the app (the work is in the background, so there's
+    /// no spinning wheel). Any that won't eject get the window, which opens as soon as macOS says
+    /// no and then fills in what's using them.
     static func eject(_ volumes: [MountedVolume], onFinish: @escaping () -> Void) {
         let session = EjectSession(volumes: volumes, onFinish: onFinish)
-        session.attemptEject()
-        if session.volumes.isEmpty { return }
         Self.open.append(session)
-        // After the menu's own click has finished, not in the middle of it.
-        DispatchQueue.main.async { session.show() }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Self.tryEjecting(volumes)
+            DispatchQueue.main.async {
+                session.volumes = result.stillThere
+                if result.stillThere.isEmpty { return session.finish() }
+                session.show()
+                session.scanInBackground(extra: result.dissenters)
+            }
+        }
     }
 
     // MARK: Actions
@@ -65,21 +75,31 @@ final class EjectSession: ObservableObject {
         startTimer()
     }
 
+    /// Unmounts in the background with the button showing "Ejecting…". The window closes as soon
+    /// as the drive is unmounted, which is when it's safe to unplug; powering it down carries on
+    /// without holding the window open.
     func forceEject() {
+        guard !forcing else { return }
         stopTimer()
         error = nil
-        var failed: [String] = []
-        volumes = volumes.filter { v in
-            if let why = ForceEject.run(mountPoint: v.url.path), VolumeInfo.isMounted(v.url.path) {
-                failed.append("“\(v.name)”: \(why)")
-                return true
+        forcing = true
+        let pending = volumes
+        DispatchQueue.global(qos: .userInitiated).async {
+            var failed: [(MountedVolume, String)] = []
+            for v in pending {
+                if let why = ForceEject.run(mountPoint: v.url.path), VolumeInfo.isMounted(v.url.path) {
+                    failed.append((v, why))
+                }
             }
-            return false
+            DispatchQueue.main.async {
+                self.forcing = false
+                self.volumes = failed.map(\.0)
+                if failed.isEmpty { return self.finish() }
+                self.phase = .blocked
+                self.error = "Couldn’t force eject " + failed.map { "“\($0.0.name)”: \($0.1)" }.joined(separator: "\n")
+                self.scanInBackground(extra: [])
+            }
         }
-        if volumes.isEmpty { finish(); return }
-        phase = .blocked
-        error = "Couldn’t force eject " + failed.joined(separator: "\n")
-        rescan()
     }
 
     func tryAgain() {
@@ -96,17 +116,35 @@ final class EjectSession: ObservableObject {
 
     // MARK: Ejecting
 
-    private func attemptEject() {
-        volumes = volumes.filter { v in
-            do { try NSWorkspace.shared.unmountAndEjectDevice(at: v.url); return false }
-            catch { return VolumeInfo.isMounted(v.url.path) }   // unplugged meanwhile: done
+    /// Asks macOS to eject each drive, by device name (disk5): a path would count as looking inside
+    /// the drive. Slow when a drive is busy, since macOS checks with everything involved before
+    /// saying no, so this only ever runs in the background. Returns the drives still there, and
+    /// anything macOS named as the reason (which can include processes the scan can't see).
+    private static func tryEjecting(_ volumes: [MountedVolume]) -> (stillThere: [MountedVolume], dissenters: [DriveUser]) {
+        var stillThere: [MountedVolume] = []
+        var dissenters: [DriveUser] = []
+        for v in volumes {
+            guard let disk = VolumeInfo.wholeDisk(atMountPoint: v.url.path) else { continue }   // gone already
+            let r = DriveUsers.run("/usr/sbin/diskutil", ["eject", disk])
+            if r.status != 0 && VolumeInfo.isMounted(v.url.path) {
+                stillThere.append(v)
+                dissenters += DriveUsers.dissenters(inEjectError: r.output)
+            }
         }
-        if volumes.isEmpty { finish(); return }
-        rescan()
+        return (stillThere, dissenters)
     }
 
-    private func rescan() {
-        users = Self.scan(volumes, extra: [])
+    /// Finds what's using the drives in the background; the list shows "Checking…" meanwhile.
+    private func scanInBackground(extra: [DriveUser]) {
+        scanning = true
+        let pending = volumes
+        DispatchQueue.global(qos: .userInitiated).async {
+            let found = Self.scan(pending, extra: extra)
+            DispatchQueue.main.async {
+                self.scanning = false
+                self.users = found
+            }
+        }
     }
 
     private static func scan(_ volumes: [MountedVolume], extra: [DriveUser]) -> [DriveUser] {
@@ -125,18 +163,7 @@ final class EjectSession: ObservableObject {
         let pending = volumes
         let started = Date()
         DispatchQueue.global(qos: .userInitiated).async {
-            var stillThere: [MountedVolume] = []
-            var dissenters: [DriveUser] = []
-            for v in pending {
-                // By device name (disk5), never by path: a path counts as looking inside the drive,
-                // and macOS would ask whether Disk Alert may access files on a removable volume.
-                guard let disk = VolumeInfo.wholeDisk(atMountPoint: v.url.path) else { continue }
-                let r = DriveUsers.run("/usr/sbin/diskutil", ["eject", disk])
-                if r.status != 0 && VolumeInfo.isMounted(v.url.path) {
-                    stillThere.append(v)
-                    dissenters += DriveUsers.dissenters(inEjectError: r.output)
-                }
-            }
+            let (stillThere, dissenters) = Self.tryEjecting(pending)
             let found = Self.scan(stillThere, extra: dissenters)
             let wait = max(0, 0.7 - Date().timeIntervalSince(started))
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
@@ -205,7 +232,7 @@ final class EjectSession: ObservableObject {
         }
         if phase == .quitting && Date().timeIntervalSince(quitStarted) > 3 {
             phase = .stillOpen
-            rescan()
+            scanInBackground(extra: [])
         }
     }
 
@@ -322,6 +349,7 @@ final class EjectSession: ObservableObject {
             let they = quittableNames.count == 1 ? "It" : "They"
             return "\(they) may be waiting for you to save, or not responding. Close \(they == "It" ? "it" : "them") yourself and Try Again, or Force Eject."
         case .blocked:
+            if scanning && users.isEmpty { return "Checking what’s using \(it)…" }
             let apps = users.filter { $0.kind == .app }.count
             let programs = users.filter { $0.kind == .process }.count
             let macOS = users.contains { $0.kind == .macOS }
@@ -359,7 +387,15 @@ struct EjectBlockedView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
 
-            if !session.users.isEmpty { list }
+            if session.scanning && session.users.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Checking what’s using it…").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+            } else if !session.users.isEmpty {
+                list
+            }
 
             if let status = session.status, !session.checking {
                 Label(status, systemImage: "arrow.clockwise")
@@ -428,7 +464,7 @@ struct EjectBlockedView: View {
                     wide("Quit Apps & Eject", prominent: true) { session.quitAppsAndEject() }
                         .keyboardShortcut(.defaultAction)
                 }
-                wide("Force Eject", destructive: true) { session.forceEject() }
+                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.forceEject() }
                 if session.offerQuit {
                     wide(tryTitle, spinning: session.checking) { session.tryAgain() }
                 } else {
@@ -441,20 +477,29 @@ struct EjectBlockedView: View {
                     Text("Waiting for apps to quit…").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 28)
-                wide("Force Eject", destructive: true) { session.forceEject() }
+                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.forceEject() }
             case .stillOpen:
                 wide(tryTitle, prominent: true, spinning: session.checking) { session.tryAgain() }
                     .keyboardShortcut(.defaultAction)
-                wide("Force Eject", destructive: true) { session.forceEject() }
+                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.forceEject() }
             }
             wide("Cancel") { session.cancel() }
                 .keyboardShortcut(.cancelAction)
         }
         .padding(.top, 2)
-        .disabled(session.checking)
+        .disabled(session.checking || session.forcing)
     }
 
     private var tryTitle: String { session.checking ? "Checking…" : "Try Again" }
+
+    /// Buttons keep their name for the UI test while they show a spinner.
+    private static func frameKey(_ title: String) -> String {
+        switch title {
+        case "Checking…": return "Try Again"
+        case "Ejecting…": return "Force Eject"
+        default: return title
+        }
+    }
 
     private func wide(_ title: String, prominent: Bool = false, destructive: Bool = false, spinning: Bool = false,
                       action: @escaping () -> Void) -> some View {
@@ -473,7 +518,7 @@ struct EjectBlockedView: View {
         .buttonStyle(ProminenceStyle(prominent: prominent))
         .background(GeometryReader { g in
             Color.clear.preference(key: ButtonFrames.self,
-                                   value: [title == "Checking…" ? "Try Again" : title: g.frame(in: .global)])
+                                   value: [Self.frameKey(title): g.frame(in: .global)])
         })
     }
 }

@@ -79,6 +79,9 @@ echo "== A busy drive"
 cat > "$WORK/main.swift" <<'SWIFT'
 import AppKit
 let mode = CommandLine.arguments[1], path = CommandLine.arguments[2]
+let started = Date()
+// How long each step takes, to stderr so the results on stdout stay as they are.
+defer { FileHandle.standardError.write(Data(String(format: "    (%@ took %.2f s)\n", mode, Date().timeIntervalSince(started)).utf8)) }
 switch mode {
 case "eject":
     do { try NSWorkspace.shared.unmountAndEjectDevice(at: URL(fileURLWithPath: path)); print("ejected") }
@@ -87,9 +90,20 @@ case "scan":
     for u in DriveUsers.scan(mountPoint: path) { print("\(u.kind)|\(u.name)|\(u.detail)") }
 case "dissent":
     for u in DriveUsers.dissenters(inEjectError: path) { print("\(u.kind)|\(u.name)|\(u.detail)") }
+case "eject-disk":
+    // What the eject window does: diskutil, by device name.
+    let r = DriveUsers.run("/usr/sbin/diskutil", ["eject", VolumeInfo.wholeDisk(atMountPoint: path) ?? path])
+    print(r.status == 0 ? "ejected" : (VolumeInfo.isMounted(path) ? "busy" : "gone"))
 case "force":
+    let disk = VolumeInfo.wholeDisk(atMountPoint: path)
     let why = ForceEject.run(mountPoint: path)
     print(why == nil && !VolumeInfo.isMounted(path) ? "forced" : "failed: \(why ?? "still mounted")")
+    FileHandle.standardError.write(Data(String(format: "    (unmounted after %.2f s; the window closes here)\n", Date().timeIntervalSince(started)).utf8))
+    // The app lets the drive finish ejecting in the background. This helper waits for that, so the
+    // disk image is fully detached before the next test attaches it again.
+    if let disk {
+        for _ in 0..<100 where FileManager.default.fileExists(atPath: "/dev/" + disk) { Thread.sleep(forTimeInterval: 0.1) }
+    }
 default:
     print("unknown mode")
 }
@@ -106,7 +120,7 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
   python3 -c 'import mmap,sys,time; f=open(sys.argv[1],"rb"); m=mmap.mmap(f.fileno(),0,prot=mmap.PROT_READ); f.close(); time.sleep(120)' "$BUSY/IMG_4021.HEIC" 3>&- & MAP_PID=$!
   sleep 1
 
-  r=$("$WORK/drive" eject "$BUSY"); echo "  eject while in use: $r"
+  r=$("$WORK/drive" eject-disk "$BUSY"); echo "  eject while in use: $r"
   if [ "$r" = busy ]; then pass "a drive in use fails to eject and is still there"
   else fail "a drive in use fails to eject and is still there"; fi
 
