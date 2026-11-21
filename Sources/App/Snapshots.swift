@@ -74,6 +74,13 @@ enum Snapshots {
         - Show what's using a drive that won't eject, with Quit Apps & Eject and Force Eject
         - Offer Try Again when a drive can't be ejected
         - Hold alerts until the Mac is awake and unlocked; list drives already plugged in
+        - One progress bar for the whole update, and a quick restart
+        - Update faster, and check the new version's signature before installing it
+        - Keep the "Updated" window open until Done is clicked
+        - On an alpha, offer to switch to the public release from Check for Updates
+        - Stop the eject window flickering: one height, agreed by window and content
+        - Never freeze on Eject: do the slow steps in the background
+        - Show release notes in full, in a box that scrolls
         """
         let alpha = Updater.Release(tag_name: "v0.5.0-alpha.40", name: nil, body: notes, html_url: "", assets: [],
                                     prerelease: true, draft: false)

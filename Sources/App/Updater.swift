@@ -219,9 +219,8 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         var text = "This is an alpha build: it hasn’t been fully tested and may be incomplete. "
         text += "You’re up to date with the public release (\(publicVersion)), so install it only if you want to try what’s coming."
         text += "\n\nYou have \(displayVersion)."
-        let notes = ReleaseNotes.plain(release.body ?? "", limit: 500)
-        if !notes.isEmpty { text += "\n\n" + notes }
         a.informativeText = text
+        a.accessoryView = Self.notesView(release.body ?? "")
         a.addButton(withTitle: "Not Now")
         a.addButton(withTitle: "Install Alpha")
         a.addButton(withTitle: "View on GitHub")
@@ -264,8 +263,8 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
         a.messageText = "Disk Alert \(Self.display(version)) is available"
-        let notes = ReleaseNotes.plain(release.body ?? "")
-        a.informativeText = "You have \(displayVersion)." + (notes.isEmpty ? "" : "\n\n" + notes)
+        a.informativeText = "You have \(displayVersion)."
+        a.accessoryView = Self.notesView(release.body ?? "")
         a.addButton(withTitle: "Install and Relaunch")
         a.addButton(withTitle: "Later")
         a.addButton(withTitle: "View on GitHub")
@@ -522,6 +521,38 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private func alert(_ title: String, _ text: String, footnote: String? = nil) {
         NSApp.activate(ignoringOtherApps: true)
         Self.makeAlert(title, text, footnote: footnote).runModal()
+    }
+
+    /// A release's notes in full, in a box that scrolls when they're long: up to about ten lines
+    /// show at once, the rest scroll. Nothing is cut off.
+    static func notesView(_ markdown: String) -> NSView? {
+        let text = ReleaseNotes.plain(markdown, limit: .max)
+        guard !text.isEmpty else { return nil }
+        let width: CGFloat = 300
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 100))
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = false
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: 100))
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        textView.textColor = .labelColor
+        textView.textContainerInset = NSSize(width: 0, height: 4)
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.string = text
+        scroll.documentView = textView
+        // As tall as the notes, up to a limit; past that it scrolls.
+        if let layout = textView.layoutManager, let container = textView.textContainer {
+            layout.ensureLayout(for: container)
+            let needed = layout.usedRect(for: container).height + 8
+            scroll.frame.size.height = min(170, max(30, ceil(needed)))
+        }
+        return scroll
     }
 
     /// An alert, with an optional small grey line under the text.
