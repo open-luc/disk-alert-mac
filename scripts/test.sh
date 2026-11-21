@@ -71,6 +71,11 @@ else
 fi
 
 if kill -0 "$AGENT_PID" 2>/dev/null; then pass "agent still running"; else fail "agent still running"; fi
+grep "^Notification:" "$WORK/agent.log" | sed 's/^/  /'
+if grep -qE '^Notification: .* \| DA Test \| [0-9]{1,2}:[0-9]{2}' "$WORK/agent.log"; then pass "the connected alert starts with the time it happened"
+else fail "the connected alert starts with the time it happened"; fi
+if grep -qE '^Notification: .* \| DA Test \| [0-9]{1,2}:[0-9]{2}.* · Disk image closed$' "$WORK/agent.log"; then pass "the ejected alert says the time too"
+else fail "the ejected alert says the time too"; fi
 
 echo
 echo "== A busy drive"

@@ -239,11 +239,14 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
         var body = ""
         switch event {
         case .connect:
-            if s.showInfo { body = details(vol).info }
+            // The time it happened, first: macOS shows no time on its newest notifications, and an
+            // alert held while the Mac slept arrives after the drive was actually plugged in.
+            let info = s.showInfo ? details(vol).info : ""
+            body = info.isEmpty ? Self.time(date) : "\(Self.time(date)) · \(info)"
             Store.log(HistoryEvent(date: date, name: vol.name, kind: .connected))
         case .eject:
             // A disk image has nothing to unplug.
-            body = vol.category == .diskImage ? "Disk image closed" : "Safe to unplug"
+            body = "\(Self.time(date)) · " + (vol.category == .diskImage ? "Disk image closed" : "Safe to unplug")
             Store.log(HistoryEvent(date: date, name: vol.name, kind: .ejected))
         case .unsafe:
             body = "Unplugged \(Self.stamp(date)) without ejecting. Files may be damaged."
@@ -279,6 +282,8 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
             }
         }
 
+        // Also written to the agent's log, where the tests read it (launchd discards it otherwise).
+        FileHandle.standardError.write(Data("Notification: \(content.title) | \(content.subtitle) | \(content.body)\n".utf8))
         post(content, replacingFor: event == .unsafe ? nil : vol.id)
 
         if event == .connect && s.openInFinder && VolumeInfo.isMounted(vol.url.path) {
@@ -295,6 +300,17 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// "on Oct 26 at 3:42 PM", in the user's own date and time format.
+    /// "3:42 PM" today, "Yesterday, 11:58 PM", or "Nov 18, 9:05 AM", in the user's own format.
+    static func time(_ date: Date, now: Date = Date()) -> String {
+        let clock = date.formatted(date: .omitted, time: .shortened)
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) { return clock }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday, \(clock)"
+        }
+        return "\(date.formatted(.dateTime.month(.abbreviated).day())), \(clock)"
+    }
+
     private static func stamp(_ date: Date) -> String {
         "on \(date.formatted(.dateTime.month(.abbreviated).day())) at \(date.formatted(date: .omitted, time: .shortened))"
     }
