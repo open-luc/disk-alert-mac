@@ -439,7 +439,7 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     /// Called when the app opens: if it was just updated, shows the progress window full, with
-    /// "Updated to …", for a few seconds.
+    /// "Updated to …", until Done is clicked.
     func finishUpdateIfNeeded() {
         let defaults = UserDefaults.standard
         guard let from = defaults.string(forKey: "updatedFrom") else { return }
@@ -454,9 +454,7 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         step = "Updated from \(from)."
         showProgressWindow()
         defaults.set(displayVersion, forKey: "lastUpdateShown")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-            if self.state == .updated { self.closeProgressWindow(); self.state = .upToDate }
-        }
+        // Stays until Done is clicked.
     }
 
     func dismissUpdated() {
