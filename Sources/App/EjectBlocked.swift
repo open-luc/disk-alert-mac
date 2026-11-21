@@ -294,9 +294,7 @@ final class EjectSession: ObservableObject {
         }
         anchorTop = w.frame.maxY
         // Whatever changes (the status line, the explanation, the list), fit the window afterwards.
-        changes = objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.fitToContent() }
-        }
+        changes = objectWillChange.sink { [weak self] _ in self?.scheduleFit() }
 
         NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
@@ -317,6 +315,18 @@ final class EjectSession: ObservableObject {
         // screen, so it can lag a change behind and give the previous layout's height.
         let fit = NSHostingView(rootView: EjectBlockedView(session: self)).fittingSize
         return window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 380, height: ceil(fit.height))).size
+    }
+
+    /// Several changes often arrive together (the list, the spinner, the status line); the window
+    /// is measured once after all of them, not once per change, which kept the app busy.
+    private var fitScheduled = false
+    private func scheduleFit() {
+        guard !fitScheduled else { return }
+        fitScheduled = true
+        DispatchQueue.main.async {
+            self.fitScheduled = false
+            self.fitToContent()
+        }
     }
 
     /// Resizes the window to its content, keeping the top edge where it was and the window on screen.
