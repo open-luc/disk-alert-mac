@@ -142,7 +142,7 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
 
   echo "  Clicking the real eject window's buttons:"
   APP="build/Disk Alert.app/Contents/MacOS/DiskAlert"
-  ui=$(perl -e 'alarm 60; exec @ARGV' "$APP" --ui-test-eject "$BUSY" 2>&1); ui_status=$?
+  ui=$(UI_TEST_CAPTURE="$PWD/build/eject-window-real" perl -e 'alarm 60; exec @ARGV' "$APP" --ui-test-eject "$BUSY" 2>&1); ui_status=$?
   echo "$ui" | sed 's/^/    /'
   if [ "$ui_status" = 0 ] && ! echo "$ui" | grep -q '^FAIL'; then pass "the eject window's buttons respond to real clicks"
   else fail "the eject window's buttons respond to real clicks (exit $ui_status)"; fi

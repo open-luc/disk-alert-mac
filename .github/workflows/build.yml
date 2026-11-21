@@ -94,6 +94,8 @@ jobs:
           # macOS has no timeout command; perl's alarm stops the app if it hangs.
           perl -e 'alarm 150; exec @ARGV' "build/Disk Alert.app/Contents/MacOS/DiskAlert" --snapshots "$OUT" > "$LOG" 2>&1 || echo "Snapshot run exited with status $?" >> "$LOG"
           cp "$LOG" "$OUT/snapshots.log"
+          # The real eject window as the UI test saw it on screen (see scripts/test.sh).
+          cp build/eject-window-real-*.png "$OUT"/ 2>/dev/null || true
           cat "$OUT/snapshots.log"
           ls -la "$OUT"
           cd "$OUT"

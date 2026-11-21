@@ -251,7 +251,8 @@ final class EjectSession: ObservableObject {
     /// ended from a timer or background step can outlive its window and leave every other
     /// button in the app dead. When it grows, its top stays put.
     private func show() {
-        let host = NSHostingController(rootView: EjectBlockedView(session: self))
+        let host = NSHostingController(rootView: PinnedToTop(session: self))
+        measurer = NSHostingController(rootView: EjectBlockedView(session: self))
         // The window sets its own size (fitToContent), once per change. Letting SwiftUI drive the
         // window's size through Auto Layout could bounce between the two until macOS stopped the
         // app, which is what crashed it after Try Again.
@@ -296,16 +297,19 @@ final class EjectSession: ObservableObject {
     /// For the UI test: the window, once shown.
     var shownWindow: NSWindow? { window }
 
-    private var hosting: NSHostingController<EjectBlockedView>?
+    private var hosting: NSHostingController<PinnedToTop>?
+    /// The same content, unpinned, used only to measure its natural height. (Measuring the pinned
+    /// content would answer "as tall as you'll let me", and the window would fill the screen.)
+    private var measurer: NSHostingController<EjectBlockedView>?
     private var screen: NSScreen?
     private var anchorTop: CGFloat = 0
     private var titleBarHeight: CGFloat = 0
     private var changes: AnyCancellable?
 
     /// The size the content needs at the window's fixed width, title bar included.
-    private func contentSize() -> NSSize {
-        guard let hosting else { return .zero }
-        let fit = hosting.sizeThatFits(in: CGSize(width: 380, height: 10_000))
+    func contentSize() -> NSSize {
+        guard let measurer else { return .zero }
+        let fit = measurer.sizeThatFits(in: CGSize(width: 380, height: 10_000))
         return NSSize(width: 380, height: ceil(fit.height) + titleBarHeight)
     }
 
@@ -370,6 +374,15 @@ final class EjectSession: ObservableObject {
 
 // MARK: - The window's content
 
+/// The content pinned to the top of the window, so nothing moves in the moment between the
+/// content changing and the window resizing to fit it.
+struct PinnedToTop: View {
+    @ObservedObject var session: EjectSession
+    var body: some View {
+        EjectBlockedView(session: session).frame(maxHeight: .infinity, alignment: .top)
+    }
+}
+
 struct EjectBlockedView: View {
     @ObservedObject var session: EjectSession
 
@@ -426,8 +439,6 @@ struct EjectBlockedView: View {
         }
         .padding(EdgeInsets(top: 22, leading: 20, bottom: 18, trailing: 20))
         .frame(width: 380)
-        // Pinned to the top, so nothing moves in the moment before the window resizes to fit.
-        .frame(maxHeight: .infinity, alignment: .top)
         .onPreferenceChange(ButtonFrames.self) { session.buttonFrames = $0 }
     }
 

@@ -50,6 +50,12 @@ enum UITest {
             check(!session.users.isEmpty, String(format: "its list of what's using the drive fills in %.1f s after Eject", Date().timeIntervalSince(pressed)))
             check(longestFreeze < 1, String(format: "the app never stops responding meanwhile (longest pause %.2f s; the spinning wheel starts at about 2 s)", longestFreeze))
             longestFreeze = 0
+            after(0.3) {   // let the window finish fitting its filled-in list
+            let needed = session.contentSize().height
+            let actual = window.contentRect(forFrameRect: window.frame).height
+            check(abs(actual - needed) < 4, String(format: "the window fits its content, no empty space (%.0f points tall, content needs %.0f)", actual, needed))
+            check(actual < 700, String(format: "and isn't oversized (%.0f points tall)", actual))
+            capture(window, as: "list")
             if let area = window.screen?.visibleFrame {
                 let off = abs(window.frame.midX - area.midX)
                 check(off < 2, "it's centered on the screen (off by \(Int(off)) points)")
@@ -61,6 +67,7 @@ enum UITest {
             after(0.2) {
                 check(session.checking, "right after clicking Try Again it shows Checking…")
                 waitUntil({ !session.checking }) { _ in
+                    after(0.3) { capture(window, as: "after-try-again") }
                     check(session.status != nil, "Try Again then says what it found: \(session.status ?? "nothing")")
                     check(longestFreeze < 1, String(format: "and the app kept responding while it checked (longest pause %.2f s)", longestFreeze))
                     check(window.isVisible, "the window stays open while the drive is still in use")
@@ -78,6 +85,7 @@ enum UITest {
                     }
                     }
                 }
+            }
             }
             }
         }
@@ -156,6 +164,16 @@ enum UITest {
                 NSApp.postEvent(event, atStart: false)
             }
         }
+    }
+
+    /// Saves what the window shows to $UI_TEST_CAPTURE-<name>.png, so CI can keep a picture of the
+    /// real window as it appeared on screen.
+    private static func capture(_ window: NSWindow, as name: String) {
+        guard let base = ProcessInfo.processInfo.environment["UI_TEST_CAPTURE"],
+              let view = window.contentView?.superview ?? window.contentView,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(base)-\(name).png"))
     }
 
     // MARK: Reporting
