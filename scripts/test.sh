@@ -180,6 +180,43 @@ else
 fi
 
 echo
+echo "== Updating, end to end"
+# A copy of the app, labelled as an old version, installs this build's real installer over itself
+# the way Check for Updates does after downloading: prepares the new version while still running,
+# quits, gets swapped and relaunched, and the new version finishes the progress bar with "Updated".
+DMG="$(ls build/*.dmg 2>/dev/null | head -1)"
+APPS="$WORK/Apps"; COPY="$APPS/Disk Alert.app"; mkdir -p "$APPS"
+REAL_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "build/Disk Alert.app/Contents/Info.plist")
+ditto "build/Disk Alert.app" "$COPY"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.0.1" -c "Set :DAPrerelease ''" "$COPY/Contents/Info.plist"
+codesign --force --sign - --timestamp=none "$COPY" 2>/dev/null
+defaults delete app.diskalert updatedFrom 2>/dev/null; defaults delete app.diskalert lastUpdateShown 2>/dev/null
+if [ -n "$DMG" ]; then
+  out=$(perl -e 'alarm 60; exec @ARGV' "$COPY/Contents/MacOS/DiskAlert" --ui-test-update "$PWD/$DMG" 2>&1); status=$?
+  quit=$(perl -MTime::HiRes=time -e 'printf "%.2f", time')
+  echo "$out" | sed 's/^/  /'
+  [ "$status" = 0 ] && pass "the old version prepares the update and quits" || fail "the old version prepares the update and quits (exit $status)"
+  # Wait for the new version to open and show "Updated".
+  for _ in $(seq 1 100); do defaults read app.diskalert lastUpdateShown >/dev/null 2>&1 && break; sleep 0.2; done
+  back=$(perl -MTime::HiRes=time -e 'printf "%.2f", time')
+  shown=$(defaults read app.diskalert lastUpdateShown 2>/dev/null)
+  installed=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$COPY/Contents/Info.plist" 2>/dev/null)
+  echo "  installed version: $installed (expected $REAL_VERSION); the new version said: Updated to $shown"
+  echo "  from the old version quitting to the new one showing Updated: $(perl -e "printf '%.1f', $back - $quit") s"
+  [ "$installed" = "$REAL_VERSION" ] && pass "the new version replaced the old one" || fail "the new version replaced the old one"
+  [ -n "$shown" ] && pass "the new version opened and showed Updated" || fail "the new version opened and showed Updated"
+  if [ ! -e "$APPS/.Disk Alert update.app" ] && [ ! -e "$COPY.old" ]; then pass "nothing is left behind"
+  else fail "nothing is left behind"; ls -la "$APPS"; fi
+  codesign --verify --deep --strict "$COPY" 2>/dev/null && pass "the installed app is intact (signature checks out)" || fail "the installed app is intact (signature checks out)"
+  ! defaults read app.diskalert updatedFrom >/dev/null 2>&1 && pass "the update note was cleared" || fail "the update note was cleared"
+else
+  fail "found this build's installer"
+fi
+pkill -f "$COPY/Contents/MacOS/DiskAlert" 2>/dev/null
+launchctl bootout "gui/$(id -u)/app.diskalert.agent" 2>/dev/null
+rm -f "$HOME/Library/LaunchAgents/app.diskalert.agent.plist"
+
+echo
 # If Disk Alert crashed during any of this, show macOS's crash report.
 for report in $(ls -t "$HOME/Library/Logs/DiagnosticReports"/DiskAlert* 2>/dev/null | head -2); do
   fail "Disk Alert crashed: $report"

@@ -32,9 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UITest.run()
             return
         }
+        if UITest.updateTestDMG != nil {
+            UITest.runUpdate()
+            return
+        }
         AppModel.shared.applyAppearance()
         AppModel.shared.installBundledSounds()
         Updater.shared.startAutomaticChecks()
+        Updater.shared.finishUpdateIfNeeded()
         let defaults = UserDefaults.standard
         if !defaults.bool(forKey: "hasLaunchedBefore") {
             defaults.set(true, forKey: "hasLaunchedBefore")

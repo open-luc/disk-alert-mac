@@ -5,6 +5,21 @@ import AppKit
 /// Prints PASS and FAIL lines, and exits with 0 when everything passed.
 enum UITest {
     static let isActive = CommandLine.arguments.contains("--ui-test-eject")
+        || CommandLine.arguments.contains("--ui-test-update")
+
+    /// DiskAlert --ui-test-update <installer.dmg>: installs that installer over this copy of the app,
+    /// exactly as Check for Updates does after downloading. The app quits and the new one opens.
+    static var updateTestDMG: URL? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--ui-test-update"), i + 1 < args.count else { return nil }
+        return URL(fileURLWithPath: args[i + 1])
+    }
+
+    static func runUpdate() {
+        NSApp.setActivationPolicy(.accessory)
+        guard let dmg = updateTestDMG else { return }
+        Updater.shared.installForTest(dmg: dmg)
+    }
 
     private static var failures = 0
 
@@ -23,6 +38,7 @@ enum UITest {
     }
 
     static func run() {
+        if updateTestDMG != nil { return runUpdate() }
         NSApp.setActivationPolicy(.accessory)
         let path = mountPoint
         let volume = MountedVolume(url: URL(fileURLWithPath: path), name: (path as NSString).lastPathComponent,

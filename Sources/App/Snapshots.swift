@@ -37,6 +37,7 @@ enum Snapshots {
                    to: out.appendingPathComponent("eject-still-open-\(suffix).png"), look: look)
         }
         renderUpdateAlert(to: out.appendingPathComponent("update-alpha-light.png"))
+        renderUpdateProgress(to: out)
         let upToDate = Updater.makeAlert("You’re up to date", "You have 0.5.0 Alpha 46 (the latest alpha).",
                                          footnote: "Public release: 0.4.1")
         upToDate.addButton(withTitle: "OK")
@@ -44,6 +45,24 @@ enum Snapshots {
         capture(upToDate, to: out.appendingPathComponent("update-up-to-date-light.png"))
         print("Snapshots written to \(out.path)")
         exit(0)
+    }
+
+    /// The update progress window at each stage: downloading, preparing the new version, and the
+    /// new version's "Updated" at the end.
+    private static func renderUpdateProgress(to out: URL) {
+        let u = Updater.shared
+        u.pendingVersion = "0.5.0 Alpha 61"
+        let stages: [(String, Updater.State, Double, String, Int64, Int64)] = [
+            ("downloading", .downloading, 0.46, "", 1_200_000, 2_500_000),
+            ("preparing", .installing, 0.9, "Copying the new version…", 0, 0),
+            ("updated", .updated, 1, "Updated from 0.5.0 Alpha 59.", 0, 0)
+        ]
+        for (name, state, overall, step, received, expected) in stages {
+            u.state = state; u.overall = overall; u.step = step; u.received = received; u.expected = expected
+            render(UpdateProgressView(updater: u), title: "Updating Disk Alert",
+                   to: out.appendingPathComponent("update-progress-\(name)-light.png"), look: .aqua)
+        }
+        u.state = .idle
     }
 
     /// The alpha update alert, with notes written the way CI writes them. Light mode only: the
