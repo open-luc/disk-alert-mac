@@ -529,7 +529,7 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let text = ReleaseNotes.plain(markdown, limit: .max)
         guard !text.isEmpty else { return nil }
         let width: CGFloat = 300
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 100))
+        let scroll = WheelScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 100))
         // A thin border, so it reads as a box you can scroll rather than text that's been cut off.
         scroll.borderType = .lineBorder
         scroll.drawsBackground = false
@@ -587,6 +587,25 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
             if let d = lastChecked { return "Last checked " + d.formatted(.relative(presentation: .named)) }
             return "Not checked yet"
         }
+    }
+}
+
+/// A scroll view that moves at once for each mouse-wheel notch. NSScrollView animates wheel notches,
+/// and inside an alert (a modal session) that animation only advances in fits and starts, so each
+/// notch lagged about half a second. Trackpads and Magic Mouse keep the system's smooth scrolling.
+final class WheelScrollView: NSScrollView {
+    override func scrollWheel(with event: NSEvent) {
+        guard !event.hasPreciseScrollingDeltas, event.scrollingDeltaY != 0, let document = documentView else {
+            return super.scrollWheel(with: event)
+        }
+        let line = (document as? NSTextView)?.font.map { $0.ascender - $0.descender + $0.leading } ?? 14
+        var origin = contentView.bounds.origin
+        // Three lines per notch, like the rest of macOS; faster spins give bigger deltas.
+        origin.y -= event.scrollingDeltaY * line * 3
+        let bottom = max(0, document.frame.height - contentView.bounds.height)
+        origin.y = min(max(0, origin.y), bottom)
+        contentView.scroll(to: origin)
+        reflectScrolledClipView(contentView)
     }
 }
 

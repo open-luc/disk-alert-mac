@@ -180,6 +180,13 @@ else
 fi
 
 echo
+echo "== Release notes scroll with a mouse wheel"
+out=$(perl -e 'alarm 30; exec @ARGV' "build/Disk Alert.app/Contents/MacOS/DiskAlert" --ui-test-scroll 2>&1); status=$?
+echo "$out" | sed 's/^/  /'
+if [ "$status" = 0 ] && ! echo "$out" | grep -q '^FAIL'; then pass "mouse-wheel scrolling in the release notes is immediate"
+else fail "mouse-wheel scrolling in the release notes is immediate (exit $status)"; fi
+
+echo
 echo "== Updating, end to end"
 # A copy of the app, labelled as an old version, installs this build's real installer over itself
 # the way Check for Updates does after downloading: prepares the new version while still running,

@@ -6,6 +6,43 @@ import AppKit
 enum UITest {
     static let isActive = CommandLine.arguments.contains("--ui-test-eject")
         || CommandLine.arguments.contains("--ui-test-update")
+        || CommandLine.arguments.contains("--ui-test-scroll")
+
+    /// DiskAlert --ui-test-scroll: sends mouse-wheel notches to the release notes box (with a long
+    /// list) and checks each one moves it straight away, all the way to the end.
+    static func runScroll() {
+        NSApp.setActivationPolicy(.accessory)
+        let notes = "## Changes\n" + (1...30).map { "- Test line \($0), to check that long release notes scroll" }.joined(separator: "\n")
+        guard let scroll = Updater.notesView(notes) as? NSScrollView, let document = scroll.documentView else {
+            check(false, "the notes box is a scroll view"); return done()
+        }
+        let w = NSWindow(contentRect: NSRect(x: 200, y: 200, width: scroll.frame.width + 40, height: scroll.frame.height + 40),
+                         styleMask: [.titled], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        scroll.frame.origin = NSPoint(x: 20, y: 20)
+        w.contentView?.addSubview(scroll)
+        w.orderFrontRegardless()
+        after(0.5) {
+            let bottom = document.frame.height - scroll.contentView.bounds.height
+            check(bottom > 0, String(format: "the long notes need scrolling (%.0f points more than the box shows)", bottom))
+            check(scroll.hasVerticalScroller && !scroll.autohidesScrollers, "and the scroll bar stays visible")
+            func notch(_ down: Bool) -> NSEvent? {
+                CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: down ? -1 : 1, wheel2: 0, wheel3: 0)
+                    .flatMap { NSEvent(cgEvent: $0) }
+            }
+            guard let down = notch(true), let up = notch(false) else { check(false, "made mouse-wheel events"); return done() }
+            let start = scroll.contentView.bounds.origin.y
+            scroll.scrollWheel(with: down)
+            let moved = scroll.contentView.bounds.origin.y - start
+            check(moved > 20, String(format: "one wheel notch down moves the notes at once (%.0f points)", moved))
+            var notches = 1
+            while scroll.contentView.bounds.origin.y < bottom - 0.5 && notches < 200 { scroll.scrollWheel(with: down); notches += 1 }
+            check(abs(scroll.contentView.bounds.origin.y - bottom) < 1, "\(notches) notches reach the last line, each one straight away")
+            scroll.scrollWheel(with: up)
+            check(scroll.contentView.bounds.origin.y < bottom - 20, "a notch up moves back at once")
+            done()
+        }
+    }
 
     /// DiskAlert --ui-test-update <installer.dmg>: installs that installer over this copy of the app,
     /// exactly as Check for Updates does after downloading. The app quits and the new one opens.
@@ -39,6 +76,7 @@ enum UITest {
 
     static func run() {
         if updateTestDMG != nil { return runUpdate() }
+        if CommandLine.arguments.contains("--ui-test-scroll") { return runScroll() }
         NSApp.setActivationPolicy(.accessory)
         let path = mountPoint
         let volume = MountedVolume(url: URL(fileURLWithPath: path), name: (path as NSString).lastPathComponent,
