@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// What happens when a drive won't eject: a window listing what's using it, with
@@ -209,8 +210,7 @@ final class EjectSession: ObservableObject {
     }
 
     private func finish() {
-        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
-        resizeObserver = nil
+        changes = nil
         window?.orderOut(nil)
         window = nil
         Self.open.removeAll { $0 === self }
@@ -225,9 +225,14 @@ final class EjectSession: ObservableObject {
     /// button in the app dead. When it grows, its top stays put.
     private func show() {
         let host = NSHostingController(rootView: EjectBlockedView(session: self))
-        host.sizingOptions = [.preferredContentSize]
-        let w = NSWindow(contentViewController: host)
-        w.styleMask = [.titled, .fullSizeContentView]
+        // The window sets its own size (fitToContent), once per change. Letting SwiftUI drive the
+        // window's size through Auto Layout could bounce between the two until macOS stopped the
+        // app, which is what crashed it after Try Again.
+        host.sizingOptions = []
+        hosting = host
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
+                         styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        w.contentViewController = host
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
         // Dragged by its top edge only. Movable-by-background can take a click on a button for
@@ -236,24 +241,26 @@ final class EjectSession: ObservableObject {
         w.isReleasedWhenClosed = false
         w.level = .floating
         w.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        window = w
 
-        // Size it to its content before placing it, so it lands centered.
-        host.view.layoutSubtreeIfNeeded()
-        w.setContentSize(host.view.fittingSize)
+        // The content sits below the (invisible) title bar, so the window is that much taller.
+        titleBarHeight = max(0, w.frame.height - w.contentLayoutRect.height)
         let mouse = NSEvent.mouseLocation
         screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+        let size = contentSize()
+        w.setContentSize(size)
         if let area = screen?.visibleFrame {
-            let size = w.frame.size
-            let x = area.midX - size.width / 2
+            let frame = w.frame
             // Where macOS puts alerts: the window's middle about 60% of the way up.
-            let top = min(area.maxY - 20, area.minY + area.height * 0.6 + size.height / 2)
-            w.setFrameOrigin(NSPoint(x: x, y: max(area.minY, top - size.height)))
+            let top = min(area.maxY - 20, area.minY + area.height * 0.6 + frame.height / 2)
+            w.setFrameOrigin(NSPoint(x: area.midX - frame.width / 2, y: max(area.minY, top - frame.height)))
         }
         anchorTop = w.frame.maxY
-        resizeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResizeNotification, object: w, queue: .main) { [weak self] _ in self?.keepTop() }
+        // Whatever changes (the status line, the explanation, the list), fit the window afterwards.
+        changes = objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.fitToContent() }
+        }
 
-        window = w
         NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
     }
@@ -261,16 +268,28 @@ final class EjectSession: ObservableObject {
     /// For the UI test: the window, once shown.
     var shownWindow: NSWindow? { window }
 
+    private var hosting: NSHostingController<EjectBlockedView>?
     private var screen: NSScreen?
     private var anchorTop: CGFloat = 0
-    private var resizeObserver: NSObjectProtocol?
+    private var titleBarHeight: CGFloat = 0
+    private var changes: AnyCancellable?
 
-    /// Keeps the top edge where it was when the content grows or shrinks, and the window on screen.
-    private func keepTop() {
+    /// The size the content needs at the window's fixed width, title bar included.
+    private func contentSize() -> NSSize {
+        guard let hosting else { return .zero }
+        let fit = hosting.sizeThatFits(in: CGSize(width: 380, height: 10_000))
+        return NSSize(width: 380, height: ceil(fit.height) + titleBarHeight)
+    }
+
+    /// Resizes the window to its content, keeping the top edge where it was and the window on screen.
+    private func fitToContent() {
         guard let window, let area = screen?.visibleFrame else { return }
-        var origin = window.frame.origin
-        origin.y = max(area.minY, min(anchorTop, area.maxY) - window.frame.height)
-        if origin != window.frame.origin { window.setFrameOrigin(origin) }
+        let size = contentSize()
+        guard abs(size.height - window.contentRect(forFrameRect: window.frame).height) >= 1 else { return }
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        frame.origin.x = window.frame.minX
+        frame.origin.y = max(area.minY, min(anchorTop, area.maxY) - frame.height)
+        window.setFrame(frame, display: true)
     }
 
     // MARK: Wording
