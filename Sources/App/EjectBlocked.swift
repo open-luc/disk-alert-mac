@@ -13,7 +13,7 @@ final class EjectSession: ObservableObject {
     @Published private(set) var checking = false     // a retry is running: the button shows a spinner
     @Published private(set) var status: String?      // what the last retry found
     @Published var showDifferences = false
-    /// Where each button is drawn, in the window's content (top-left origin). For the UI test.
+    /// Where each button is drawn, in the window's content view from its top left. For the UI test.
     var buttonFrames: [String: CGRect] = [:]
 
     private var quitting: [NSRunningApplication] = []
@@ -367,7 +367,6 @@ struct EjectBlockedView: View {
         }
         .padding(EdgeInsets(top: 22, leading: 20, bottom: 18, trailing: 20))
         .frame(width: 380)
-        .coordinateSpace(.named("ejectWindow"))
         .onPreferenceChange(ButtonFrames.self) { session.buttonFrames = $0 }
     }
 
@@ -452,7 +451,7 @@ struct EjectBlockedView: View {
         .buttonStyle(ProminenceStyle(prominent: prominent))
         .background(GeometryReader { g in
             Color.clear.preference(key: ButtonFrames.self,
-                                   value: [title == "Checking…" ? "Try Again" : title: g.frame(in: .named("ejectWindow"))])
+                                   value: [title == "Checking…" ? "Try Again" : title: g.frame(in: .global)])
         })
     }
 }
