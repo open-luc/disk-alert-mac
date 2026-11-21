@@ -1,0 +1,187 @@
+== Unit tests
+PASS  awake, unlocked, display on: alerts
+PASS  never slept since the agent started: alerts
+PASS  asleep: holds
+PASS  display off: holds
+PASS  screen locked: holds
+PASS  1 second after waking: holds
+PASS  2.9 seconds after waking: holds
+PASS  3 seconds after waking: alerts
+PASS  nothing waiting and free to alert: delivers at once
+PASS  nothing left waiting afterwards
+PASS  can't alert: holds the alert
+PASS  reports that it is holding
+PASS  still can't alert: keeps holding
+PASS  free again: releases the held alert
+PASS  releases it only once
+PASS  releases held alerts in the order they happened
+PASS  a new alert never overtakes held ones
+PASS  plugged in during sleep: held
+PASS  woken to the lock screen: still held
+PASS  unlocked within 3 seconds of waking: still held
+PASS  3 seconds after waking and unlocked: alert plays
+PASS  alpha notes: heading, bullets, and no repeated "not fully tested" line
+PASS  no Markdown marks left in alpha notes
+PASS  public release notes: the Install section is left out
+PASS  bold marks dropped
+PASS  empty notes stay empty
+PASS  long notes are cut at a line and end with …
+PASS  reads the source fingerprint from release notes
+PASS  no fingerprint in older notes
+PASS  the fingerprint never shows in the notes
+
+All tests passed.
+
+== What this Mac reports (alerts are held while it is asleep, locked or its display is off)
+screen locked: not reported
+on console: 1
+main display asleep: false
+
+== Agent with real disk images
+PASS  attaching a disk image logs "connected"
+PASS  ejecting it logs "ejected"
+PASS  a disk already attached at startup stays silent
+PASS  disk images stay out of the drive list
+PASS  agent still running
+
+== A busy drive
+    (eject-disk took 0.26 s)
+  eject while in use: busy
+PASS  a drive in use fails to eject and is still there
+  lsof reports:
+    COMMAND  PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+    bash    9057 runner    3w   REG   1,26        0   18 /Volumes/DA Busy/open file.txt
+    sleep   9670 runner  cwd    DIR   1,26      204    2 /Volumes/DA Busy
+    Python  9672 runner  txt    REG   1,26    65536   19 /Volumes/DA Busy/IMG_4021.HEIC
+    Python  9672 runner    4r   REG   1,26    65536   19 /Volumes/DA Busy/IMG_4021.HEIC
+    sed     9681 runner    3w   REG   1,26        0   18 /Volumes/DA Busy/open file.txt
+    (scan took 0.13 s)
+  using it: process|bash|“open file.txt” is open
+  using it: process|Python|“IMG_4021.HEIC” is open
+  using it: process|sleep|Working in a folder on this drive
+PASS  lists the program with a file open, and which file
+PASS  lists a program working in a folder on the drive
+PASS  a photo loaded into memory shows as that file, not "running from this drive"
+  diskutil's reason (Try Again reads it for processes the scan can't see):
+    Unmount of disk8 failed: at least one volume could not be unmounted
+    Unmount was dissented by PID 9057 (/bin/bash)
+    Dissenter parent PPID 9050 (/bin/bash)
+    (dissent took 0.00 s)
+  parsed: process|bash|Using this drive
+PASS  reads which process blocked the eject from macOS's error
+  Clicking the real eject window's buttons:
+          (show: frame 348.0, ejecting false, scanning false, 0 rows)
+    PASS  the window opens for a drive that's in use, 0.6 s after Eject
+          (fit: wants 391.0, window 391.0, ejecting false, scanning true, 0 rows, status false)
+          (fit: wants 538.0, window 391.0, ejecting false, scanning false, 4 rows, status false)
+          (fit: now 538.0)
+    PASS  its list of what's using the drive fills in 0.7 s after Eject
+    PASS  the app never stops responding meanwhile (longest pause 0.46 s; the spinning wheel starts at about 2 s)
+          (window 538, content view 506, layout area 506, safe area top 0, min size 32, content min 0, fitting 0)
+          (asked for 300, got 300)
+          (asked for 538, got 538)
+          (asked for 600, got 600)
+    PASS  the window fits its content, no empty space (538 points tall, content needs 538)
+    PASS  and isn't oversized (538 points tall)
+    PASS  it's centered on the screen (off by 0 points)
+    PASS  it sits high on the screen, like an alert
+    PASS  it doesn't block the rest of the app
+          (click Try Again: frame y 427–455, content 506 tall, flipped yes, point in window y 97, window 538 tall; all: Cancel 463, Force Eject 391, Try Again 427)
+          (fit: wants 538.0, window 538.0, ejecting false, scanning false, 4 rows, status false)
+    PASS  right after clicking Try Again it shows Checking…
+          (fit: wants 569.0, window 568.0, ejecting false, scanning false, 4 rows, status true)
+          (fit: now 569.0)
+    PASS  Try Again then says what it found: Still in use (checked at 4:30:25 AM).
+    PASS  and the app kept responding while it checked (longest pause 0.19 s)
+    PASS  the window stays open while the drive is still in use
+          (click Cancel: frame y 493–521, content 537 tall, flipped yes, point in window y 62, window 569 tall; all: Cancel 493, Force Eject 421, Try Again 457)
+    PASS  Cancel closes the window
+    PASS  nothing is left blocking the app afterwards
+    PASS  a button in another Disk Alert window still works afterwards
+PASS  the eject window's buttons respond to real clicks
+    (unmounted after 0.68 s; the window closes here)
+    (force took 0.83 s)
+  force eject: forced
+PASS  Force Eject ejects a drive that's still in use
+PASS  the agent counts a Force Eject as an eject, not an unplug
+./scripts/test.sh: line 180:  9670 Terminated: 15          ( cd "$BUSY" && exec sleep 120 )
+./scripts/test.sh: line 180:  9672 Terminated: 15          python3 -c 'import mmap,sys,time; f=open(sys.argv[1],"rb"); m=mmap.mmap(f.fileno(),0,prot=mmap.PROT_READ); f.close(); time.sleep(120)' "$BUSY/IMG_4021.HEIC" 3>&-
+    (eject took 0.06 s)
+  eject with a file open: busy
+    (eject took 0.02 s)
+  after closing it: ejected
+PASS  Try Again after closing the file ejects it
+  Clicking Try Again until it works:
+          (show: frame 348.0, ejecting false, scanning false, 0 rows)
+    PASS  the window opens for a drive that's in use, 0.2 s after Eject
+          (fit: wants 391.0, window 391.0, ejecting false, scanning true, 0 rows, status false)
+          (fit: wants 442.0, window 391.0, ejecting false, scanning false, 2 rows, status false)
+          (fit: now 442.0)
+    PASS  its list of what's using the drive fills in 0.3 s after Eject
+    PASS  the app never stops responding meanwhile (longest pause 0.16 s; the spinning wheel starts at about 2 s)
+          (window 442, content view 410, layout area 410, safe area top 0, min size 32, content min 0, fitting 0)
+          (asked for 300, got 300)
+          (asked for 442, got 442)
+          (asked for 600, got 600)
+    PASS  the window fits its content, no empty space (442 points tall, content needs 442)
+    PASS  and isn't oversized (442 points tall)
+    PASS  it's centered on the screen (off by 0 points)
+    PASS  it sits high on the screen, like an alert
+    PASS  it doesn't block the rest of the app
+          (click Try Again: frame y 331–359, content 410 tall, flipped yes, point in window y 97, window 442 tall; all: Cancel 367, Force Eject 295, Try Again 331)
+          (fit: wants 442.0, window 442.0, ejecting false, scanning false, 2 rows, status false)
+    PASS  right after clicking Try Again it shows Checking…
+          (fit: wants 473.0, window 472.0, ejecting false, scanning false, 2 rows, status true)
+          (fit: now 473.0)
+    PASS  Try Again then says what it found: Still in use (checked at 4:30:35 AM).
+    PASS  and the app kept responding while it checked (longest pause 0.20 s)
+    PASS  the window stays open while the drive is still in use
+          (click Try Again: frame y 361–389, content 441 tall, flipped yes, point in window y 98, window 473 tall; all: Cancel 397, Force Eject 325, Try Again 361)
+          (fit: wants 442.0, window 473.0, ejecting false, scanning false, 2 rows, status true)
+          (fit: now 442.0)
+    PASS  pressing Try Again again shows Checking… again
+    PASS  once nothing is using it, Try Again ejects the drive
+    PASS  and the window closes by itself
+    PASS  nothing is left blocking the app afterwards
+    PASS  a button in another Disk Alert window still works afterwards
+./scripts/test.sh: line 180:  9989 Terminated: 15          ( cd "$BUSY" && exec sleep 120 )
+./scripts/test.sh: line 180:  9990 Terminated: 15          python3 -c 'import mmap,sys,time; f=open(sys.argv[1],"rb"); m=mmap.mmap(f.fileno(),0,prot=mmap.PROT_READ); f.close(); time.sleep(120)' "$BUSY/IMG_4021.HEIC"
+PASS  Try Again ejects once the drive is free, without crashing
+
+== Release notes scroll with a mouse wheel
+  PASS  the long notes need scrolling (637 points more than the box shows)
+  PASS  and the scroll bar stays visible
+  PASS  one wheel notch down moves the notes at once (39 points)
+  PASS  17 notches reach the last line, each one straight away
+  PASS  a notch up moves back at once
+PASS  mouse-wheel scrolling in the release notes is immediate
+
+== Updating, end to end
+        (update: Opening the update… at 0.20 s)
+        (update: Copying the new version… at 0.36 s)
+        (update: Checking it… at 0.38 s)
+        (update: Restarting Disk Alert… at 0.45 s)
+PASS  the old version prepares the update and quits
+  installed version: 0.5.1 (expected 0.5.1); the new version said: Updated to 0.5.1
+  from the old version quitting to the new one showing Updated: 1.1 s
+PASS  the new version replaced the old one
+PASS  the new version opened and showed Updated
+PASS  nothing is left behind
+PASS  the installed app is intact (signature checks out)
+PASS  the update note was cleared
+
+
+History:
+  connected DA Test
+  ejected DA Test
+  connected DA Busy
+  ejected DA Busy
+  connected DA Busy
+  ejected DA Busy
+  connected DA Busy
+  ejected DA Busy
+Agent output:
+  Force eject: disk8s1 counts as ejected
+./scripts/test.sh: line 238:  9345 Terminated: 15          "$AGENT" > "$WORK/agent.log" 2>&1
+
+All tests passed.
