@@ -37,6 +37,9 @@ enum Snapshots {
                    to: out.appendingPathComponent("eject-still-open-\(suffix).png"), look: look)
         }
         renderUpdateAlert(to: out.appendingPathComponent("update-alpha-light.png"))
+        capture(Updater.makeAlert("You’re up to date", "You have 0.5.0 Alpha 46 (the latest alpha).",
+                                  footnote: "Public release: 0.4.1"),
+                to: out.appendingPathComponent("update-up-to-date-light.png"))
         print("Snapshots written to \(out.path)")
         exit(0)
     }
@@ -55,7 +58,12 @@ enum Snapshots {
                                     prerelease: true, draft: false)
         let stable = Updater.Release(tag_name: "v0.4.1", name: nil, body: nil, html_url: "", assets: [],
                                      prerelease: false, draft: false)
-        let alert = Updater.shared.alphaAlert(alpha, stable: stable)
+        capture(Updater.shared.alphaAlert(alpha, stable: stable), to: url)
+    }
+
+    /// Captures a real alert window. Light mode only (see above).
+    private static func capture(_ alert: NSAlert, to url: URL) {
+        NSApp.appearance = NSAppearance(named: .aqua)
         alert.layout()
         let window = alert.window
         window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))

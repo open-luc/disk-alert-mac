@@ -131,22 +131,24 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
             offerAlpha(alpha, stable: stable)
             return
         }
-        alert("You’re up to date", upToDateText(stable: stable, alpha: alpha))
+        let upToDate = upToDateText(stable: stable, alpha: alpha)
+        alert("You’re up to date", upToDate.text, footnote: upToDate.footnote)
     }
 
-    /// One line: the version you have, and in brackets why it's current.
+    /// One line: the version you have, and in brackets why it's current. On an alpha, a smaller
+    /// line underneath gives the public release for comparison.
     /// "You have 0.4.1 (the latest version)." or "You have 0.5.0 Alpha 35 (the latest alpha)."
-    private func upToDateText(stable: Release?, alpha: Release?) -> String {
+    private func upToDateText(stable: Release?, alpha: Release?) -> (text: String, footnote: String?) {
         let you = "You have \(displayVersion)"
-        guard isAlpha else { return you + " (the latest version)." }
+        guard isAlpha else { return (you + " (the latest version).", nil) }
         if let stable, isSameApp(as: stable) {
-            return you + " (the same as \(Self.display(stable.version)), the latest version)."
+            return (you + " (the same as \(Self.display(stable.version)), the latest version).", nil)
         }
+        let footnote = "Public release: " + (stable.map { Self.display($0.version) } ?? "none yet")
         if alpha == nil || !Self.isNewer(alpha!.version, than: currentVersion) {
-            return you + " (the latest alpha)."
+            return (you + " (the latest alpha).", footnote)
         }
-        let newest = stable.map { ", \(Self.display($0.version))" } ?? ""
-        return you + " (an alpha, newer than the latest public release\(newest))."
+        return (you + " (an alpha, newer than the public release).", footnote)
     }
 
     private func offerAlpha(_ release: Release, stable: Release?) {
@@ -362,12 +364,24 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
 
-    private func alert(_ title: String, _ text: String) {
+    private func alert(_ title: String, _ text: String, footnote: String? = nil) {
         NSApp.activate(ignoringOtherApps: true)
+        Self.makeAlert(title, text, footnote: footnote).runModal()
+    }
+
+    /// An alert, with an optional small grey line under the text.
+    static func makeAlert(_ title: String, _ text: String, footnote: String? = nil) -> NSAlert {
         let a = NSAlert()
         a.messageText = title
         a.informativeText = text
-        a.runModal()
+        if let footnote {
+            let label = NSTextField(labelWithString: footnote)
+            label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            label.textColor = .secondaryLabelColor
+            label.sizeToFit()
+            a.accessoryView = label
+        }
+        return a
     }
 
     var statusText: String {
