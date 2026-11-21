@@ -283,6 +283,7 @@ final class EjectSession: ObservableObject {
         let mouse = NSEvent.mouseLocation
         screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         w.setFrame(NSRect(origin: w.frame.origin, size: frameSize()), display: false)
+        if UITest.isActive { print("      (show: frame \(w.frame.height), ejecting \(ejecting), scanning \(scanning), \(users.count) rows)") }
         if let area = screen?.visibleFrame {
             let frame = w.frame
             // Where macOS puts alerts: high on the screen. The top edge stays here and the window
@@ -321,11 +322,15 @@ final class EjectSession: ObservableObject {
     private func fitToContent() {
         guard let window, let area = screen?.visibleFrame else { return }
         let size = frameSize()
+        if UITest.isActive {
+            print("      (fit: wants \(size.height), window \(window.frame.height), ejecting \(ejecting), scanning \(scanning), \(users.count) rows, status \(status != nil))")
+        }
         guard abs(size.height - window.frame.height) >= 1 else { return }
         var frame = NSRect(origin: .zero, size: size)
         frame.origin.x = window.frame.minX
         frame.origin.y = max(area.minY, min(anchorTop, area.maxY) - frame.height)
         window.setFrame(frame, display: true)
+        if UITest.isActive { print("      (fit: now \(window.frame.height))") }
     }
 
     // MARK: Wording
