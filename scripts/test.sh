@@ -149,9 +149,28 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
   r2=$("$WORK/drive" eject "$BUSY"); echo "  after closing it: $r2"
   if [ "$r" = busy ] && [ "$r2" = ejected ]; then pass "Try Again after closing the file ejects it"
   else fail "Try Again after closing the file ejects it"; fi
+
+  # The same in the real window, by clicking: Try Again while busy, then close what was using
+  # the drive and Try Again once more. It must eject, close the window, and not crash.
+  echo "  Clicking Try Again until it works:"
+  hdiutil attach -quiet -nobrowse "$WORK/busy.dmg"
+  (cd "$BUSY" && exec sleep 120) & H1=$!
+  python3 -c 'import mmap,sys,time; f=open(sys.argv[1],"rb"); m=mmap.mmap(f.fileno(),0,prot=mmap.PROT_READ); f.close(); time.sleep(120)' "$BUSY/IMG_4021.HEIC" & H2=$!
+  sleep 1
+  ui=$(perl -e 'alarm 60; exec @ARGV' "$APP" --ui-test-eject "$BUSY" --release "$H1,$H2" 2>&1); ui_status=$?
+  echo "$ui" | sed 's/^/    /'
+  if [ "$ui_status" = 0 ] && ! echo "$ui" | grep -q '^FAIL'; then pass "Try Again ejects once the drive is free, without crashing"
+  else fail "Try Again ejects once the drive is free, without crashing (exit $ui_status)"; fi
 else
   fail "drive helper compiles"
 fi
+
+echo
+# If Disk Alert crashed during any of this, show macOS's crash report.
+for report in $(ls -t "$HOME/Library/Logs/DiagnosticReports"/DiskAlert* 2>/dev/null | head -2); do
+  fail "Disk Alert crashed: $report"
+  head -c 6000 "$report" | sed 's/^/    /'
+done
 
 echo
 echo "History:"; history | sed 's/^/  /'

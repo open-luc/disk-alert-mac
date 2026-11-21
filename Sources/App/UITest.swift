@@ -8,6 +8,14 @@ enum UITest {
 
     private static var failures = 0
 
+    /// With --release <pid,pid>: after the first Try Again, those programs are stopped (as if you
+    /// closed what was using the drive) and Try Again is pressed again, which should eject it.
+    private static var releasePIDs: [pid_t] {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--release"), i + 1 < args.count else { return [] }
+        return args[i + 1].split(separator: ",").compactMap { pid_t($0) }
+    }
+
     private static var mountPoint: String {
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--ui-test-eject"), i + 1 < args.count else { return "" }
@@ -42,12 +50,33 @@ enum UITest {
                     check(session.status != nil, "Try Again then says what it found: \(session.status ?? "nothing")")
                     check(window.isVisible, "the window stays open while the drive is still in use")
 
+                    if !releasePIDs.isEmpty {
+                        return tryAgainAfterReleasing(session, window) { finished }
+                    }
                     guard click("Cancel", in: window) else { return done() }
                     after(1) {
                         check(!window.isVisible && finished, "Cancel closes the window")
                         check(NSApp.modalWindow == nil, "nothing is left blocking the app afterwards")
                         otherWindowStillWorks { done() }
                     }
+                }
+            }
+        }
+    }
+
+    /// Stops what was using the drive, presses Try Again once more, and expects the drive to eject
+    /// and the window to close, with the app still running.
+    private static func tryAgainAfterReleasing(_ session: EjectSession, _ window: NSWindow, finished: @escaping () -> Bool) {
+        releasePIDs.forEach { kill($0, SIGTERM) }
+        after(1) {
+            guard click("Try Again", in: window) else { return done() }
+            after(0.2) {
+                check(session.checking, "pressing Try Again again shows Checking… again")
+                after(4) {
+                    check(!VolumeInfo.isMounted(mountPoint), "once nothing is using it, Try Again ejects the drive")
+                    check(!window.isVisible && finished(), "and the window closes by itself")
+                    check(NSApp.modalWindow == nil, "nothing is left blocking the app afterwards")
+                    otherWindowStillWorks { done() }
                 }
             }
         }
