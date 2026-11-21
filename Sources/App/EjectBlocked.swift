@@ -95,13 +95,15 @@ final class EjectSession: ObservableObject {
         a.alertStyle = .warning
         a.messageText = volumes.count == 1 ? "Force eject “\(volumes[0].name)”?" : "Force eject \(volumes.count) drives?"
         let it = volumes.count == 1 ? "it" : "them"
-        let names = users.filter { $0.kind != .macOS }.map(\.name)
+        let using = users.filter { $0.kind != .macOS }
+        let names = using.map(\.name)
+        let noun = using.allSatisfy { $0.kind == .app } ? "apps" : "programs"
         let who: String
         switch names.count {
         case 0: who = "Anything still using \(it)"
         case 1: who = names[0]
         case 2: who = "\(names[0]) and \(names[1])"
-        default: who = "\(names.count) apps"
+        default: who = "\(names.count) \(noun)"
         }
         a.informativeText = "\(who) will lose access to its files. Anything being saved to the drive right now can be lost or damaged."
         a.addButton(withTitle: "Cancel")
