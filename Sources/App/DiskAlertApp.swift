@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Snapshots.run()
             return
         }
+        if UITest.isActive {
+            UITest.run()
+            return
+        }
         AppModel.shared.applyAppearance()
         AppModel.shared.installBundledSounds()
         Updater.shared.startAutomaticChecks()

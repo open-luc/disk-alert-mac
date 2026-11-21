@@ -22,7 +22,7 @@ final class EjectSession: ObservableObject {
     private let isSample: Bool
 
     /// Open sessions, kept alive while their window is up.
-    private static var open: [EjectSession] = []
+    private(set) static var open: [EjectSession] = []
 
     private init(volumes: [MountedVolume], onFinish: @escaping () -> Void) {
         self.volumes = volumes
@@ -45,7 +45,9 @@ final class EjectSession: ObservableObject {
         let session = EjectSession(volumes: volumes, onFinish: onFinish)
         session.attemptEject()
         if session.volumes.isEmpty { return }
-        session.show()
+        Self.open.append(session)
+        // After the menu's own click has finished, not in the middle of it.
+        DispatchQueue.main.async { session.show() }
     }
 
     // MARK: Actions
@@ -202,7 +204,6 @@ final class EjectSession: ObservableObject {
     }
 
     private func finish() {
-        if let window, NSApp.modalWindow === window { NSApp.stopModal() }
         if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
         resizeObserver = nil
         window?.orderOut(nil)
@@ -214,8 +215,9 @@ final class EjectSession: ObservableObject {
     // MARK: Window
 
     /// Shown the way a macOS alert is: centered on the screen you're using, a little above the
-    /// middle, and holding Disk Alert's attention until you choose (other apps stay usable, so you
-    /// can go and close files). When it grows, its top stays put.
+    /// middle, in front of other windows. It doesn't block the rest of Disk Alert: a modal session
+    /// ended from a timer or background step can outlive its window and leave every other
+    /// button in the app dead. When it grows, its top stays put.
     private func show() {
         let host = NSHostingController(rootView: EjectBlockedView(session: self))
         host.sizingOptions = [.preferredContentSize]
@@ -223,9 +225,11 @@ final class EjectSession: ObservableObject {
         w.styleMask = [.titled, .fullSizeContentView]
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
-        w.isMovableByWindowBackground = true
+        // Dragged by its top edge only. Movable-by-background can take a click on a button for
+        // the start of a drag, so the button never sees it.
+        w.isMovableByWindowBackground = false
         w.isReleasedWhenClosed = false
-        w.level = .modalPanel
+        w.level = .floating
         w.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
 
         // Size it to its content before placing it, so it lands centered.
@@ -245,11 +249,12 @@ final class EjectSession: ObservableObject {
             forName: NSWindow.didResizeNotification, object: w, queue: .main) { [weak self] _ in self?.keepTop() }
 
         window = w
-        Self.open.append(self)
         NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
-        NSApp.runModal(for: w)
     }
+
+    /// For the UI test: the window, once shown.
+    var shownWindow: NSWindow? { window }
 
     private var screen: NSScreen?
     private var anchorTop: CGFloat = 0

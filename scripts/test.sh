@@ -121,6 +121,13 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
   if [ "$r" = "process|bash|Using this drive" ]; then pass "reads which process blocked the eject from macOS's error"
   else fail "reads which process blocked the eject from macOS's error"; fi
 
+  echo "  Clicking the real eject window's buttons:"
+  APP="build/Disk Alert.app/Contents/MacOS/DiskAlert"
+  ui=$(perl -e 'alarm 60; exec @ARGV' "$APP" --ui-test-eject "$BUSY" 2>&1); ui_status=$?
+  echo "$ui" | sed 's/^/    /'
+  if [ "$ui_status" = 0 ] && ! echo "$ui" | grep -q '^FAIL'; then pass "the eject window's buttons respond to real clicks"
+  else fail "the eject window's buttons respond to real clicks (exit $ui_status)"; fi
+
   r=$("$WORK/drive" force "$BUSY"); echo "  force eject: $r"
   if [ "$r" = forced ] && [ ! -d "$BUSY" ]; then pass "Force Eject ejects a drive that's still in use"
   else fail "Force Eject ejects a drive that's still in use"; fi

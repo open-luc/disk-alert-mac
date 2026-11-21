@@ -32,7 +32,7 @@ enum SoundPreview {
 }
 
 final class AppModel: ObservableObject {
-    static let shared = Snapshots.isActive ? AppModel(sample: ()) : AppModel()
+    static let shared = (Snapshots.isActive || UITest.isActive) ? AppModel(sample: ()) : AppModel()
 
     /// True for the sample model used to draw README screenshots: nothing is saved or started.
     let isSample: Bool
