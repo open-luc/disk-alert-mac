@@ -259,14 +259,15 @@ final class EjectSession: ObservableObject {
     /// ended from a timer or background step can outlive its window and leave every other
     /// button in the app dead. When it grows, its top stays put.
     private func show() {
-        // A plain SwiftUI view with no say in the window's size: the window sets its own size
-        // (fitToContent), once per change. Letting SwiftUI size the window, through a hosting
-        // controller or its view's constraints, bounced between the two until macOS stopped the app
-        // (the crash after Try Again), and later kept the window a title bar's height too tall.
+        // The window sets its own size (fitToContent), once per change, to exactly what the SwiftUI
+        // view wants, so the two never disagree. They did: through a hosting controller they
+        // bounced until macOS stopped the app (the crash after Try Again), and with the content
+        // extended under the title bar the view counted the title bar twice and kept growing the
+        // window 32 points past it, which flickered black and see-through.
         let host = NSHostingView(rootView: PinnedToTop(session: self))
         host.sizingOptions = []
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
-                         styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+                         styleMask: [.titled], backing: .buffered, defer: false)
         w.contentView = host
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
