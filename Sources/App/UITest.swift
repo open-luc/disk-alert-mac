@@ -51,7 +51,7 @@ enum UITest {
             check(longestFreeze < 1, String(format: "the app never stops responding meanwhile (longest pause %.2f s; the spinning wheel starts at about 2 s)", longestFreeze))
             longestFreeze = 0
             after(0.3) {   // let the window finish fitting its filled-in list
-            let needed = session.contentSize().height
+            let needed = session.frameSize().height
             let actual = window.frame.height
             check(abs(actual - needed) < 4, String(format: "the window fits its content, no empty space (%.0f points tall, content needs %.0f)", actual, needed))
             check(actual < 700, String(format: "and isn't oversized (%.0f points tall)", actual))

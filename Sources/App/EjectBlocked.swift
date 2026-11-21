@@ -281,11 +281,9 @@ final class EjectSession: ObservableObject {
         w.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window = w
 
-        // The content sits below the (invisible) title bar, so the window is that much taller.
-        titleBarHeight = max(0, w.frame.height - w.contentLayoutRect.height)
         let mouse = NSEvent.mouseLocation
         screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        w.setFrame(NSRect(origin: w.frame.origin, size: contentSize()), display: false)
+        w.setFrame(NSRect(origin: w.frame.origin, size: frameSize()), display: false)
         if let area = screen?.visibleFrame {
             let frame = w.frame
             // Where macOS puts alerts: high on the screen. The top edge stays here and the window
@@ -312,22 +310,20 @@ final class EjectSession: ObservableObject {
     private var measurer: NSHostingController<EjectBlockedView>?
     private var screen: NSScreen?
     private var anchorTop: CGFloat = 0
-    private var titleBarHeight: CGFloat = 0
     private var changes: AnyCancellable?
 
-    /// The window's size for its content at the fixed width: the content, plus the invisible title
-    /// bar it sits under. Set directly as the window's frame; converting through a content size
-    /// would count the title bar twice.
-    func contentSize() -> NSSize {
-        guard let measurer else { return .zero }
+    /// The window's frame size for its content at the fixed width. macOS adds the invisible title
+    /// bar the content sits under, so only the content's own height goes in.
+    func frameSize() -> NSSize {
+        guard let measurer, let window else { return .zero }
         let fit = measurer.sizeThatFits(in: CGSize(width: 380, height: 10_000))
-        return NSSize(width: 380, height: ceil(fit.height) + titleBarHeight)
+        return window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 380, height: ceil(fit.height))).size
     }
 
     /// Resizes the window to its content, keeping the top edge where it was and the window on screen.
     private func fitToContent() {
         guard let window, let area = screen?.visibleFrame else { return }
-        let size = contentSize()
+        let size = frameSize()
         guard abs(size.height - window.frame.height) >= 1 else { return }
         var frame = NSRect(origin: .zero, size: size)
         frame.origin.x = window.frame.minX
