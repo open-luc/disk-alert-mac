@@ -127,7 +127,10 @@ final class EjectSession: ObservableObject {
             var stillThere: [MountedVolume] = []
             var dissenters: [DriveUser] = []
             for v in pending {
-                let r = DriveUsers.run("/usr/sbin/diskutil", ["eject", v.url.path])
+                // By device name (disk5), never by path: a path counts as looking inside the drive,
+                // and macOS would ask whether Disk Alert may access files on a removable volume.
+                guard let disk = VolumeInfo.wholeDisk(atMountPoint: v.url.path) else { continue }
+                let r = DriveUsers.run("/usr/sbin/diskutil", ["eject", disk])
                 if r.status != 0 && VolumeInfo.isMounted(v.url.path) {
                     stillThere.append(v)
                     dissenters += DriveUsers.dissenters(inEjectError: r.output)
@@ -515,7 +518,7 @@ struct DifferencesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             item("Quit Apps & Eject", "Quits each app normally, the same as ⌘Q. Apps finish what they were writing and ask to save anything unsaved, so nothing is lost. Quitting an app closes all of its windows, not just the files on this drive.")
-            item("Force Eject", "Ejects the drive now and leaves the apps running, but they lose access to its files. macOS still closes the drive properly, so it stays intact. Anything an app was in the middle of saving can be lost or damaged. If you were only viewing something, like a photo in Preview, it’s harmless.", red: true)
+            item("Force Eject", "Ejects the drive now and leaves the apps running, but they lose access to its files. macOS still closes the drive properly, so it stays intact. Anything an app was in the middle of saving can be lost or damaged. If you were only viewing something, like a photo in Preview, it’s harmless, though the app may keep showing what it had already loaded.", red: true)
             item("Try Again", "Tries once more. Use it after closing things yourself, or after waiting for macOS to finish with the drive.")
             Divider()
             item("Pulling the cable instead", "Nothing gets the chance to finish, and the drive can be left marked as damaged.")

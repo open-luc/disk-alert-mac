@@ -50,10 +50,12 @@ enum DriveUsers {
         let path: String
     }
 
-    /// Asks lsof, which comes with macOS, for every file open on the volume. Given a mount
-    /// point it lists the whole file system without walking it, so this is quick.
+    /// Asks lsof, which comes with macOS, for every file open on the volume. Given the volume's
+    /// device (/dev/disk5s1) it lists the whole file system without walking it, so this is quick,
+    /// and it never looks inside the drive, which would make macOS ask for removable-volume access.
     static func openFiles(onVolume mountPoint: String) -> [OpenFile] {
-        let out = run("/usr/sbin/lsof", ["-w", "-n", "-P", "-F", "pcfn", "--", mountPoint]).output
+        let target = VolumeInfo.device(atMountPoint: mountPoint).map { "/dev/" + $0 } ?? mountPoint
+        let out = run("/usr/sbin/lsof", ["-w", "-n", "-P", "-F", "pcfn", "--", target]).output
         var result: [OpenFile] = []
         var pid: pid_t = 0, command = "", fd = ""
         for line in out.split(separator: "\n") {
@@ -83,7 +85,10 @@ enum DriveUsers {
         mutating func add(_ e: OpenFile) {
             switch e.fd {
             case "cwd": workingFolder = true
-            case "txt": runningFromDrive = true
+            case "txt":
+                // A program's own code, or a file it has loaded straight into memory (Preview
+                // does this with photos). Only the first means it's running from the drive.
+                if e.path == DriveUsers.executablePath(of: e.pid) { runningFromDrive = true } else { files.insert(e.path) }
             default: files.insert(e.path)
             }
         }
@@ -157,15 +162,19 @@ enum DriveUsers {
         }
     }
 
+    static func executablePath(of pid: pid_t) -> String? {
+        var buffer = [CChar](repeating: 0, count: 4096)
+        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+        return String(cString: buffer)
+    }
+
     /// Parts of macOS that use drives on their own. They can't be quit, and usually finish soon.
     static func macOSService(command: String, pid: pid_t) -> (name: String, detail: String)? {
         let spotlight = ["mds", "mds_stores", "mdworker", "mdworker_shared", "mdsync", "corespotlightd"]
         if spotlight.contains(command) { return ("Spotlight", "Indexing this drive. Try again in a moment.") }
         if command.hasPrefix("backupd") { return ("Time Machine", "Backing up to this drive") }
         if command.lowercased().contains("quicklook") { return ("Quick Look", "Making previews. Try again in a moment.") }
-        var buffer = [CChar](repeating: 0, count: 4096)
-        if proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 {
-            let path = String(cString: buffer)
+        if let path = executablePath(of: pid) {
             if path.hasPrefix("/System/") || path.hasPrefix("/usr/libexec/") || path.hasPrefix("/usr/sbin/") {
                 return (command, "Using this drive. Try again in a moment.")
             }

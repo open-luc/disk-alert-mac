@@ -101,6 +101,9 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
   # Another program works in a folder on the drive. Started first, so it can't inherit the file below.
   (cd "$BUSY" && exec sleep 120) & SLEEP_PID=$!
   exec 3>"$BUSY/open file.txt"                  # this script keeps a file open on the drive
+  # A program that loads a photo straight into memory and closes the file, as Preview does.
+  head -c 65536 /dev/urandom > "$BUSY/IMG_4021.HEIC"
+  python3 -c 'import mmap,sys,time; f=open(sys.argv[1],"rb"); m=mmap.mmap(f.fileno(),0,prot=mmap.PROT_READ); f.close(); time.sleep(120)' "$BUSY/IMG_4021.HEIC" 3>&- & MAP_PID=$!
   sleep 1
 
   r=$("$WORK/drive" eject "$BUSY"); echo "  eject while in use: $r"
@@ -113,6 +116,8 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
   else fail "lists the program with a file open, and which file"; fi
   if echo "$scan" | grep -q '^process|sleep|Working in a folder on this drive$'; then pass "lists a program working in a folder on the drive"
   else fail "lists a program working in a folder on the drive"; fi
+  if echo "$scan" | grep -qi '^process|python[^|]*|“IMG_4021.HEIC” is open$'; then pass "a photo loaded into memory shows as that file, not \"running from this drive\""
+  else fail "a photo loaded into memory shows as that file, not \"running from this drive\""; fi
 
   echo "  diskutil's reason (Try Again reads it for processes the scan can't see):"
   /usr/sbin/diskutil eject "$BUSY" 2>&1 | sed 's/^/    /'
@@ -134,7 +139,7 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
   sleep 1
   if grep -q "Force eject: disk" "$WORK/agent.log"; then pass "the agent counts a Force Eject as an eject, not an unplug"
   else fail "the agent counts a Force Eject as an eject, not an unplug"; fi
-  exec 3>&-; kill "$SLEEP_PID" 2>/dev/null
+  exec 3>&-; kill "$SLEEP_PID" "$MAP_PID" 2>/dev/null
 
   # Try Again: close what was using it, then eject works.
   hdiutil attach -quiet -nobrowse "$WORK/busy.dmg"
