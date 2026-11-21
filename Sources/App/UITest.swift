@@ -46,13 +46,13 @@ enum UITest {
             }
             let openedAfter = Date().timeIntervalSince(pressed)
             check(openedAfter < 5, String(format: "the window opens for a drive that's in use, %.1f s after Eject", openedAfter))
-            waitUntil({ !session.scanning }) { _ in
+            waitUntil({ !session.ejecting && !session.scanning }) { _ in
             check(!session.users.isEmpty, String(format: "its list of what's using the drive fills in %.1f s after Eject", Date().timeIntervalSince(pressed)))
             check(longestFreeze < 1, String(format: "the app never stops responding meanwhile (longest pause %.2f s; the spinning wheel starts at about 2 s)", longestFreeze))
             longestFreeze = 0
             after(0.3) {   // let the window finish fitting its filled-in list
             let needed = session.contentSize().height
-            let actual = window.contentRect(forFrameRect: window.frame).height
+            let actual = window.frame.height
             check(abs(actual - needed) < 4, String(format: "the window fits its content, no empty space (%.0f points tall, content needs %.0f)", actual, needed))
             check(actual < 700, String(format: "and isn't oversized (%.0f points tall)", actual))
             capture(window, as: "list")

@@ -13,6 +13,7 @@ final class EjectSession: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var checking = false     // a retry is running: the button shows a spinner
     @Published private(set) var scanning = false     // finding what's using the drive
+    @Published private(set) var ejecting = false     // the first eject attempt is still running
     @Published private(set) var forcing = false      // Force Eject is running
     @Published private(set) var status: String?      // what the last retry found
     @Published var showDifferences = false
@@ -52,12 +53,19 @@ final class EjectSession: ObservableObject {
     static func eject(_ volumes: [MountedVolume], onFinish: @escaping () -> Void) {
         let session = EjectSession(volumes: volumes, onFinish: onFinish)
         Self.open.append(session)
+        session.ejecting = true
+        // A quick eject shows nothing (the agent's alert says it worked). If macOS takes longer
+        // than half a second to answer, the window opens with "Ejecting…" so the wait shows.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if session.ejecting && session.window == nil { session.show() }
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Self.tryEjecting(volumes)
             DispatchQueue.main.async {
+                session.ejecting = false
                 session.volumes = result.stillThere
                 if result.stillThere.isEmpty { return session.finish() }
-                session.show()
+                if session.window == nil { session.show() }
                 session.scanInBackground(extra: result.dissenters)
             }
         }
@@ -268,6 +276,8 @@ final class EjectSession: ObservableObject {
         w.isMovableByWindowBackground = false
         w.isReleasedWhenClosed = false
         w.level = .floating
+        w.isOpaque = true
+        w.backgroundColor = .windowBackgroundColor
         w.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window = w
 
@@ -275,8 +285,7 @@ final class EjectSession: ObservableObject {
         titleBarHeight = max(0, w.frame.height - w.contentLayoutRect.height)
         let mouse = NSEvent.mouseLocation
         screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        let size = contentSize()
-        w.setContentSize(size)
+        w.setFrame(NSRect(origin: w.frame.origin, size: contentSize()), display: false)
         if let area = screen?.visibleFrame {
             let frame = w.frame
             // Where macOS puts alerts: high on the screen. The top edge stays here and the window
@@ -306,7 +315,9 @@ final class EjectSession: ObservableObject {
     private var titleBarHeight: CGFloat = 0
     private var changes: AnyCancellable?
 
-    /// The size the content needs at the window's fixed width, title bar included.
+    /// The window's size for its content at the fixed width: the content, plus the invisible title
+    /// bar it sits under. Set directly as the window's frame; converting through a content size
+    /// would count the title bar twice.
     func contentSize() -> NSSize {
         guard let measurer else { return .zero }
         let fit = measurer.sizeThatFits(in: CGSize(width: 380, height: 10_000))
@@ -317,8 +328,8 @@ final class EjectSession: ObservableObject {
     private func fitToContent() {
         guard let window, let area = screen?.visibleFrame else { return }
         let size = contentSize()
-        guard abs(size.height - window.contentRect(forFrameRect: window.frame).height) >= 1 else { return }
-        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        guard abs(size.height - window.frame.height) >= 1 else { return }
+        var frame = NSRect(origin: .zero, size: size)
         frame.origin.x = window.frame.minX
         frame.origin.y = max(area.minY, min(anchorTop, area.maxY) - frame.height)
         window.setFrame(frame, display: true)
@@ -342,6 +353,9 @@ final class EjectSession: ObservableObject {
             default: return "\(names.count) apps didn’t quit"
             }
         }
+        if ejecting {
+            return volumes.count == 1 ? "Ejecting “\(volumes[0].name)”…" : "Ejecting \(volumes.count) drives…"
+        }
         return volumes.count == 1 ? "Couldn’t eject “\(volumes[0].name)”" : "Couldn’t eject \(volumes.count) drives"
     }
 
@@ -354,6 +368,7 @@ final class EjectSession: ObservableObject {
             let they = quittableNames.count == 1 ? "It" : "They"
             return "\(they) may be waiting for you to save, or not responding. Close \(they == "It" ? "it" : "them") yourself and Try Again, or Force Eject."
         case .blocked:
+            if ejecting { return "Waiting for macOS to let go of \(it)…" }
             if scanning && users.isEmpty { return "Checking what’s using \(it)…" }
             let apps = users.filter { $0.kind == .app }.count
             let programs = users.filter { $0.kind == .process }.count
@@ -379,7 +394,9 @@ final class EjectSession: ObservableObject {
 struct PinnedToTop: View {
     @ObservedObject var session: EjectSession
     var body: some View {
-        EjectBlockedView(session: session).frame(maxHeight: .infinity, alignment: .top)
+        EjectBlockedView(session: session)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
@@ -401,7 +418,9 @@ struct EjectBlockedView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
 
-            if session.scanning && session.users.isEmpty {
+            if session.ejecting {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 44)
+            } else if session.scanning && session.users.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Checking what’s using it…").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -426,6 +445,7 @@ struct EjectBlockedView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if !session.ejecting {
             buttons
 
             Button(session.showDifferences ? "Hide the differences" : "What’s the difference?") {
@@ -436,6 +456,7 @@ struct EjectBlockedView: View {
             .frame(maxWidth: .infinity)
 
             if session.showDifferences { DifferencesView() }
+            }
         }
         .padding(EdgeInsets(top: 22, leading: 20, bottom: 18, trailing: 20))
         .frame(width: 380)
