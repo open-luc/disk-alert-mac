@@ -6,6 +6,11 @@ on:
     # offered only to people who opt in) and save logs and screenshots to the -preview branches.
     branches: [main, 'claude/**']
   workflow_dispatch:
+    inputs:
+      long_test_notes:
+        description: "Alpha only: add a long list of sample lines to the notes, to test scrolling in the update message"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -144,6 +149,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.full }}
           SOURCE_HASH: ${{ steps.version.outputs.source }}
+          LONG_TEST_NOTES: ${{ inputs.long_test_notes }}
         run: |
           SINCE_MAIN="$(scripts/app-changes.sh origin/main)"
           LAST_ALPHA="$(gh release list --limit 100 --json tagName,isPrerelease,createdAt \
@@ -165,6 +171,11 @@ jobs:
           {
             echo "## Changes not yet in a public release"
             echo "${SINCE_MAIN:-- Rebuilt, no changes to the app}"
+            if [[ "$LONG_TEST_NOTES" == "true" ]]; then
+              echo
+              echo "## Test list (not real changes)"
+              for i in $(seq 1 30); do echo "- Test line $i, to check that long release notes scroll in the update message"; done
+            fi
             echo
             echo "<!-- source: $SOURCE_HASH -->"
           } > notes.md
