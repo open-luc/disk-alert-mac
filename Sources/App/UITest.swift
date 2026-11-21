@@ -144,11 +144,23 @@ enum UITest {
                     }
                     // Let the window finish growing for the new status line, as a person would.
                     after(0.5) {
+                    // Force Eject asks first; Cancel in that question changes nothing.
+                    guard click("Force Eject", in: window) else { return done() }
+                    after(0.6) {
+                    check(session.confirmation != nil && window.attachedSheet != nil, "Force Eject asks first, in a sheet on the window")
+                    check(VolumeInfo.isMounted(mountPoint), "and nothing is ejected yet")
+                    if let sheet = window.attachedSheet { capture(sheet, as: "force-confirm") }
+                    session.confirmation?.buttons.first?.performClick(nil)
+                    after(0.6) {
+                    check(window.attachedSheet == nil && window.isVisible && VolumeInfo.isMounted(mountPoint),
+                          "Cancel in that question leaves the drive and the window as they were")
                     guard click("Cancel", in: window) else { return done() }
                     after(1) {
                         check(!window.isVisible && finished, "Cancel closes the window")
                         check(NSApp.modalWindow == nil, "nothing is left blocking the app afterwards")
                         otherWindowStillWorks { done() }
+                    }
+                    }
                     }
                     }
                 }

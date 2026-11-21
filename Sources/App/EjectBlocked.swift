@@ -83,6 +83,37 @@ final class EjectSession: ObservableObject {
         startTimer()
     }
 
+    /// The question shown before Force Eject, while it's up. For the UI test.
+    private(set) var confirmation: NSAlert?
+
+    /// Asks before forcing, in a sheet on the window: Cancel is the default, so Return or Escape
+    /// leaves everything as it was.
+    func confirmForceEject() {
+        guard !forcing, confirmation == nil else { return }
+        guard let window else { return forceEject() }
+        let a = NSAlert()
+        a.alertStyle = .warning
+        a.messageText = volumes.count == 1 ? "Force eject “\(volumes[0].name)”?" : "Force eject \(volumes.count) drives?"
+        let it = volumes.count == 1 ? "it" : "them"
+        let names = users.filter { $0.kind != .macOS }.map(\.name)
+        let who: String
+        switch names.count {
+        case 0: who = "Anything still using \(it)"
+        case 1: who = names[0]
+        case 2: who = "\(names[0]) and \(names[1])"
+        default: who = "\(names.count) apps"
+        }
+        a.informativeText = "\(who) will lose access to its files. Anything being saved to the drive right now can be lost or damaged."
+        a.addButton(withTitle: "Cancel")
+        let force = a.addButton(withTitle: "Force Eject")
+        force.hasDestructiveAction = true
+        confirmation = a
+        a.beginSheetModal(for: window) { [weak self] response in
+            self?.confirmation = nil
+            if response == .alertSecondButtonReturn { self?.forceEject() }
+        }
+    }
+
     /// Unmounts in the background with the button showing "Ejecting…". The window closes as soon
     /// as the drive is unmounted, which is when it's safe to unplug; powering it down carries on
     /// without holding the window open.
@@ -507,7 +538,7 @@ struct EjectBlockedView: View {
                     wide("Quit Apps & Eject", prominent: true) { session.quitAppsAndEject() }
                         .keyboardShortcut(.defaultAction)
                 }
-                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.forceEject() }
+                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.confirmForceEject() }
                 if session.offerQuit {
                     wide(tryTitle, spinning: session.checking) { session.tryAgain() }
                 } else {
@@ -520,11 +551,11 @@ struct EjectBlockedView: View {
                     Text("Waiting for apps to quit…").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 28)
-                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.forceEject() }
+                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.confirmForceEject() }
             case .stillOpen:
                 wide(tryTitle, prominent: true, spinning: session.checking) { session.tryAgain() }
                     .keyboardShortcut(.defaultAction)
-                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.forceEject() }
+                wide(session.forcing ? "Ejecting…" : "Force Eject", destructive: true, spinning: session.forcing) { session.confirmForceEject() }
             }
             wide("Cancel") { session.cancel() }
                 .keyboardShortcut(.cancelAction)
