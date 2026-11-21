@@ -333,6 +333,25 @@ enum VolumeInfo {
         mountTable().contains { mountPoint(of: $0) == path }
     }
 
+    /// The device mounted at this path, e.g. "disk5s1".
+    static func device(atMountPoint path: String) -> String? {
+        guard var entry = mountTable().first(where: { mountPoint(of: $0) == path }) else { return nil }
+        let device = withUnsafePointer(to: &entry.f_mntfromname) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) }
+        }
+        return device.hasPrefix("/dev/") ? String(device.dropFirst("/dev/".count)) : nil
+    }
+
+    /// The whole disk a volume is on, e.g. "disk5" for disk5s1.
+    static func wholeDisk(atMountPoint path: String) -> String? {
+        guard let bsd = device(atMountPoint: path),
+              let session = DASessionCreate(kCFAllocatorDefault),
+              let disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, bsd),
+              let whole = DADiskCopyWholeDisk(disk),
+              let name = DADiskGetBSDName(whole) else { return nil }
+        return String(cString: name)
+    }
+
     /// Plain-English name for a file system type such as "apfs" or "exfat".
     static func formatName(_ kind: String) -> String {
         switch kind.lowercased() {

@@ -29,37 +29,70 @@ enum Snapshots {
                    to: out.appendingPathComponent("alpha-builds-\(suffix).png"), look: look)
             render(SoundsTab().environmentObject(model), title: "Custom Sounds", to: out.appendingPathComponent("settings-sounds-\(suffix).png"), look: look)
             render(MenuView().environmentObject(model), title: nil, to: out.appendingPathComponent("menu-\(suffix).png"), look: look)
-            renderAlert(AppModel.ejectFailedAlert(names: ["Media SSD"]), to: out.appendingPathComponent("eject-failed-\(suffix).png"), look: look)
+            render(EjectBlockedView(session: ejectSample(many: false)), title: nil,
+                   to: out.appendingPathComponent("eject-blocked-\(suffix).png"), look: look)
+            render(EjectBlockedView(session: ejectSample(many: true)), title: nil,
+                   to: out.appendingPathComponent("eject-blocked-many-\(suffix).png"), look: look)
+            render(EjectBlockedView(session: ejectSample(many: false, phase: .stillOpen)), title: nil,
+                   to: out.appendingPathComponent("eject-still-open-\(suffix).png"), look: look)
         }
+        renderUpdateAlert(to: out.appendingPathComponent("update-alpha-light.png"))
         print("Snapshots written to \(out.path)")
         exit(0)
     }
 
-    /// Captures a real alert window as it would appear on screen.
-    private static func renderAlert(_ alert: NSAlert, to url: URL, look: NSAppearance.Name) {
-        alert.window.appearance = NSAppearance(named: look)
+    /// The alpha update alert, with notes written the way CI writes them. Light mode only: the
+    /// alert's frosted background doesn't come through in a capture, which blanks Dark mode.
+    private static func renderUpdateAlert(to url: URL) {
+        NSApp.appearance = NSAppearance(named: .aqua)
+        let notes = """
+        ## Changes not yet in a public release
+        - Show what's using a drive that won't eject, with Quit Apps & Eject and Force Eject
+        - Offer Try Again when a drive can't be ejected
+        - Hold alerts until the Mac is awake and unlocked; list drives already plugged in
+        """
+        let alpha = Updater.Release(tag_name: "v0.5.0-alpha.31", name: nil, body: notes, html_url: "", assets: [],
+                                    prerelease: true, draft: false)
+        let stable = Updater.Release(tag_name: "v0.4.1", name: nil, body: nil, html_url: "", assets: [],
+                                     prerelease: false, draft: false)
+        let alert = Updater.shared.alphaAlert(alpha, stable: stable)
         alert.layout()
         let window = alert.window
         window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
         window.orderFrontRegardless()
         RunLoop.main.run(until: Date().addingTimeInterval(1.0))
         guard let view = window.contentView?.superview ?? window.contentView,
-              let content = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
-        view.cacheDisplay(in: view.bounds, to: content)
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
         window.orderOut(nil)
-
-        // The alert's frosted background isn't part of the capture, which leaves Dark mode's white
-        // text on nothing. Lay it over the window background color, as it looks on screen.
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        (NSAppearance(named: look) ?? NSAppearance.currentDrawing()).performAsCurrentDrawingAppearance {
-            NSColor.windowBackgroundColor.setFill()
-            view.bounds.fill()
-        }
-        content.draw(in: view.bounds)
-        NSGraphicsContext.restoreGraphicsState()
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
+    }
+
+    /// The eject window with sample apps, using real app icons from this Mac.
+    private static func ejectSample(many: Bool, phase: EjectSession.Phase = .blocked) -> EjectSession {
+        func app(_ id: pid_t, _ name: String, _ path: String, _ detail: String) -> DriveUser {
+            DriveUser(id: id, name: name, kind: .app, detail: detail, appPath: path)
+        }
+        var users = [
+            app(1, "Preview", "/System/Applications/Preview.app", "“IMG_4021.HEIC” is open"),
+            app(2, "Terminal", "/System/Applications/Utilities/Terminal.app", "Working in a folder on this drive"),
+            app(3, "TextEdit", "/System/Applications/TextEdit.app", "2 files open")
+        ]
+        if many {
+            users += [
+                app(4, "Music", "/System/Applications/Music.app", "Library is on this drive"),
+                app(5, "Photos", "/System/Applications/Photos.app", "Library is on this drive"),
+                app(6, "QuickTime Player", "/System/Applications/QuickTime Player.app", "“clip_0042.mov” is open"),
+                app(7, "Image Capture", "/System/Applications/Image Capture.app", "Importing to this drive"),
+                app(8, "Script Editor", "/System/Applications/Utilities/Script Editor.app", "“Rename.scpt” is open"),
+                DriveUser(id: 9, name: "rsync", kind: .process, detail: "38 files open")
+            ]
+        }
+        users.append(DriveUser(id: 10, name: "macOS (Spotlight)", kind: .macOS, detail: "Indexing this drive. Try again in a moment."))
+        if phase == .stillOpen { users = [users[2], users.last!] }
+        let drive = MountedVolume(url: URL(fileURLWithPath: "/Volumes/Crucial 2T"), name: "Crucial 2T",
+                                  free: 1_100_000_000_000, total: 2_000_000_000_000, category: .drive)
+        return EjectSession(sampleVolume: drive, users: users, phase: phase, showDifferences: !many && phase == .blocked)
     }
 
     /// Lays the view out in an offscreen window, captures it at 2x, and frames it

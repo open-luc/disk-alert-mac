@@ -1,7 +1,8 @@
 #!/bin/bash
 # Tests Disk Alert after ./scripts/build.sh. Needs macOS.
-#  1. Unit tests for holding alerts while the Mac is asleep or locked (Tests/main.swift).
+#  1. Unit tests (Tests/main.swift): holding alerts while the Mac is asleep or locked, release notes.
 #  2. Runs the built agent against real disk images and checks what it records.
+#  3. A busy drive: what's using it, Try Again, and Force Eject (which the agent must count as an eject).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -13,7 +14,7 @@ pass() { echo "PASS  $1"; }
 fail() { echo "FAIL  $1"; FAILED=1; }
 
 echo "== Unit tests"
-if xcrun swiftc Sources/Shared/AlertHold.swift Tests/main.swift -o "$WORK/unit-tests"; then
+if xcrun swiftc Sources/Shared/AlertHold.swift Sources/Shared/ReleaseNotes.swift Tests/main.swift -o "$WORK/unit-tests"; then
   "$WORK/unit-tests" || FAILED=1
 else
   fail "unit tests compile"
@@ -72,38 +73,71 @@ fi
 if kill -0 "$AGENT_PID" 2>/dev/null; then pass "agent still running"; else fail "agent still running"; fi
 
 echo
+echo "== A busy drive"
+# The same code the app uses: NSWorkspace to eject, DriveUsers to list what's using the drive,
+# ForceEject for Force Eject.
+cat > "$WORK/main.swift" <<'SWIFT'
+import AppKit
+let mode = CommandLine.arguments[1], path = CommandLine.arguments[2]
+switch mode {
+case "eject":
+    do { try NSWorkspace.shared.unmountAndEjectDevice(at: URL(fileURLWithPath: path)); print("ejected") }
+    catch { print(VolumeInfo.isMounted(path) ? "busy" : "gone") }
+case "scan":
+    for u in DriveUsers.scan(mountPoint: path) { print("\(u.kind)|\(u.name)|\(u.detail)") }
+case "force":
+    let why = ForceEject.run(mountPoint: path)
+    print(why == nil && !VolumeInfo.isMounted(path) ? "forced" : "failed: \(why ?? "still mounted")")
+default:
+    print("unknown mode")
+}
+SWIFT
+BUSY="/Volumes/DA Busy"
+hdiutil create -quiet -size 20m -fs HFS+ -volname "DA Busy" "$WORK/busy.dmg"
+if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; then
+  hdiutil attach -quiet -nobrowse "$WORK/busy.dmg"
+  exec 3>"$BUSY/open file.txt"                  # this script keeps a file open on the drive
+  (cd "$BUSY" && exec sleep 120) & SLEEP_PID=$!   # and another program works in a folder on it
+  sleep 1
+
+  r=$("$WORK/drive" eject "$BUSY"); echo "  eject while in use: $r"
+  if [ "$r" = busy ]; then pass "a drive in use fails to eject and is still there"
+  else fail "a drive in use fails to eject and is still there"; fi
+
+  scan=$("$WORK/drive" scan "$BUSY"); echo "$scan" | sed 's/^/  using it: /'
+  if echo "$scan" | grep -q '|“open file.txt” is open$'; then pass "lists the program with a file open, and which file"
+  else fail "lists the program with a file open, and which file"; fi
+  if echo "$scan" | grep -q '^process|sleep|Working in a folder on this drive$'; then pass "lists a program working in a folder on the drive"
+  else fail "lists a program working in a folder on the drive"; fi
+
+  r=$("$WORK/drive" force "$BUSY"); echo "  force eject: $r"
+  if [ "$r" = forced ] && [ ! -d "$BUSY" ]; then pass "Force Eject ejects a drive that's still in use"
+  else fail "Force Eject ejects a drive that's still in use"; fi
+  sleep 1
+  if grep -q "Force eject: disk" "$WORK/agent.log"; then pass "the agent counts a Force Eject as an eject, not an unplug"
+  else fail "the agent counts a Force Eject as an eject, not an unplug"; fi
+  exec 3>&-; kill "$SLEEP_PID" 2>/dev/null
+
+  # Try Again: close what was using it, then eject works.
+  hdiutil attach -quiet -nobrowse "$WORK/busy.dmg"
+  exec 3>"$BUSY/open file.txt"
+  r=$("$WORK/drive" eject "$BUSY"); echo "  eject with a file open: $r"
+  exec 3>&-
+  r2=$("$WORK/drive" eject "$BUSY"); echo "  after closing it: $r2"
+  if [ "$r" = busy ] && [ "$r2" = ejected ]; then pass "Try Again after closing the file ejects it"
+  else fail "Try Again after closing the file ejects it"; fi
+else
+  fail "drive helper compiles"
+fi
+
+echo
 echo "History:"; history | sed 's/^/  /'
 echo "Agent output:"; sed 's/^/  /' "$WORK/agent.log"
 
 kill "$AGENT_PID" 2>/dev/null
-
-echo
-echo "== Ejecting a busy drive (what Try Again is for)"
-# The same calls the menu's Eject uses: NSWorkspace to eject, VolumeInfo to see it's still there.
-cat > "$WORK/main.swift" <<'SWIFT'
-import AppKit
-let url = URL(fileURLWithPath: CommandLine.arguments[1])
-do { try NSWorkspace.shared.unmountAndEjectDevice(at: url); print("ejected") }
-catch { print(VolumeInfo.isMounted(url.path) ? "busy" : "gone") }
-SWIFT
-hdiutil create -quiet -size 20m -fs HFS+ -volname "DA Busy" "$WORK/busy.dmg"
-hdiutil attach -quiet -nobrowse "$WORK/busy.dmg"
-if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/eject"; then
-  exec 3>"/Volumes/DA Busy/open file.txt"   # keep a file open on the drive
-  r=$("$WORK/eject" "/Volumes/DA Busy"); echo "  with a file open: $r"
-  if [ "$r" = busy ]; then pass "a drive with an open file fails to eject and is still there to retry"
-  else fail "a drive with an open file fails to eject and is still there to retry"; fi
-  exec 3>&-                                 # close it, as the alert asks
-  r=$("$WORK/eject" "/Volumes/DA Busy"); echo "  after closing it: $r"
-  if [ "$r" = ejected ]; then pass "trying again after closing the file ejects it"
-  else fail "trying again after closing the file ejects it"; fi
-else
-  fail "eject helper compiles"
-fi
-
 hdiutil detach -quiet "/Volumes/DA Before" 2>/dev/null
 hdiutil detach -quiet "/Volumes/DA Test" 2>/dev/null
-hdiutil detach -quiet -force "/Volumes/DA Busy" 2>/dev/null
+hdiutil detach -quiet -force "$BUSY" 2>/dev/null
 rm -rf "$SUPPORT" "$WORK"
 
 echo

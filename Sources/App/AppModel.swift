@@ -291,38 +291,15 @@ final class AppModel: ObservableObject {
     // MARK: Ejecting
 
     func eject(_ volume: MountedVolume) {
-        ejectWithRetry([volume])
+        ejectOrExplain([volume])
     }
 
-    /// Ejects each drive. If any are busy, offers Try Again for those until they eject,
-    /// are unplugged, or the person cancels.
-    private func ejectWithRetry(_ volumes: [MountedVolume]) {
-        var pending = volumes
-        while !pending.isEmpty {
-            pending = pending.filter { v in
-                do { try NSWorkspace.shared.unmountAndEjectDevice(at: v.url); return false }
-                catch { return VolumeInfo.isMounted(v.url.path) }   // unplugged meanwhile: nothing to retry
-            }
-            guard !pending.isEmpty else { break }
-            NSApp.activate(ignoringOtherApps: true)
-            guard Self.ejectFailedAlert(names: pending.map(\.name)).runModal() == .alertFirstButtonReturn else { break }
-        }
+    /// Ejects the drives. If any are busy, a window shows what's using them, with
+    /// Quit Apps & Eject, Force Eject, Try Again and Cancel.
+    private func ejectOrExplain(_ volumes: [MountedVolume]) {
+        guard !isSample else { return }
+        EjectSession.eject(volumes) { [weak self] in self?.refresh() }
         refresh()
-    }
-
-    /// "Couldn’t eject", with Try Again as the default button and Cancel on Escape.
-    static func ejectFailedAlert(names: [String]) -> NSAlert {
-        let alert = NSAlert()
-        if names.count == 1 {
-            alert.messageText = "Couldn’t eject “\(names[0])”"
-            alert.informativeText = "Something may still be using it. Close any open files from the drive, then try again."
-        } else {
-            alert.messageText = "Some drives couldn’t be ejected"
-            alert.informativeText = names.joined(separator: ", ") + " may still be in use. Close any open files from them, then try again."
-        }
-        alert.addButton(withTitle: "Try Again")
-        alert.addButton(withTitle: "Cancel")
-        return alert
     }
 
     /// Two confirmations, with the final button locked for three seconds.
@@ -361,7 +338,7 @@ final class AppModel: ObservableObject {
         timer.invalidate()
         guard result == .alertSecondButtonReturn else { return }
 
-        ejectWithRetry(volumes)
+        ejectOrExplain(volumes)
     }
 
     // MARK: Uninstall

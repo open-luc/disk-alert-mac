@@ -147,11 +147,30 @@ final class Monitor: NSObject, UNUserNotificationCenterDelegate {
         ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.deliverHeld()
         }
-        DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
-            // Nobody unlocks a sleeping Mac, so a missed wake notification can't hold alerts forever.
-            self?.asleep = false
-            self?.deliverHeld()
+        // Distributed notifications wait while an app is inactive unless told not to, and this agent
+        // is never active, so both ask for immediate delivery.
+        let dnc = DistributedNotificationCenter.default()
+        dnc.addObserver(self, selector: #selector(screenUnlocked), name: Notification.Name("com.apple.screenIsUnlocked"),
+                        object: nil, suspensionBehavior: .deliverImmediately)
+        dnc.addObserver(self, selector: #selector(forceEjectComing(_:)), name: ForceEject.notice,
+                        object: nil, suspensionBehavior: .deliverImmediately)
+    }
+
+    @objc private func screenUnlocked() {
+        // Nobody unlocks a sleeping Mac, so a missed wake notification can't hold alerts forever.
+        asleep = false
+        deliverHeld()
+    }
+
+    /// Disk Alert's Force Eject is about to unmount this drive. That's an eject, not an unplug,
+    /// so every volume on the drive is marked the way a normal eject request marks it.
+    @objc private func forceEjectComing(_ note: Notification) {
+        guard let path = note.object as? String,
+              let bsd = mounted.first(where: { $0.value.url.path == path })?.key else { return }
+        let disk = VolumeInfo.wholeDisk(atMountPoint: path) ?? bsd
+        for other in mounted.keys where other == bsd || other.hasPrefix(disk + "s") {
+            ejectRequested.insert(other)
+            FileHandle.standardError.write(Data("Force eject: \(other) counts as ejected\n".utf8))
         }
     }
 
