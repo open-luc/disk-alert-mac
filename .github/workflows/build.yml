@@ -121,8 +121,14 @@ jobs:
             exit 0
           fi
           {
-            echo "## What's new"
-            echo "${CHANGES:-- Rebuilt, no changes to the app}"
+            # A hand-written summary in notes/<version>.md, when there is one; otherwise the list of
+            # app changes since the last release.
+            if [ -f "notes/$VERSION.md" ]; then
+              cat "notes/$VERSION.md"
+            else
+              echo "## What's new"
+              echo "${CHANGES:-- Rebuilt, no changes to the app}"
+            fi
             echo
             echo "## Install"
             echo "Download **Disk-Alert-$VERSION.dmg**, open it and drag Disk Alert into Applications. Already installed? Use **Check for Updates** in the menu bar."
