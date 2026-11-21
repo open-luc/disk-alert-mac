@@ -107,23 +107,29 @@ enum UITest {
     }
 
     private static func find(_ title: String, in element: Any, depth: Int = 0) -> NSRect? {
-        guard depth < 60, let e = element as? NSAccessibilityProtocol else { return nil }
-        let texts = [e.accessibilityLabel ?? nil, e.accessibilityTitle ?? nil].compactMap { $0 }
-        if (e.accessibilityRole ?? nil) == .button, texts.contains(title) {
-            return e.accessibilityFrame
+        guard depth < 60, let e = element as? NSObject else { return nil }
+        let texts = [ax(e, "accessibilityLabel") as? String, ax(e, "accessibilityTitle") as? String].compactMap { $0 }
+        if ax(e, "accessibilityRole") as? String == NSAccessibility.Role.button.rawValue, texts.contains(title) {
+            return (ax(e, "accessibilityFrame") as? NSValue)?.rectValue
         }
-        for child in (e.accessibilityChildren ?? nil) ?? [] {
+        for child in ax(e, "accessibilityChildren") as? [Any] ?? [] {
             if let found = find(title, in: child, depth: depth + 1) { return found }
         }
         return nil
     }
 
     private static func dump(_ element: Any, depth: Int) {
-        guard depth < 12, let e = element as? NSAccessibilityProtocol else { return }
-        let role = (e.accessibilityRole ?? nil)?.rawValue ?? "?"
-        let label = (e.accessibilityLabel ?? nil) ?? (e.accessibilityTitle ?? nil) ?? ""
+        guard depth < 12, let e = element as? NSObject else { return }
+        let role = ax(e, "accessibilityRole") as? String ?? "?"
+        let label = ax(e, "accessibilityLabel") as? String ?? ax(e, "accessibilityTitle") as? String ?? ""
         print(String(repeating: "  ", count: depth + 1) + role + " " + label)
-        for child in (e.accessibilityChildren ?? nil) ?? [] { dump(child, depth: depth + 1) }
+        for child in ax(e, "accessibilityChildren") as? [Any] ?? [] { dump(child, depth: depth + 1) }
+    }
+
+    /// An accessibility value by name, the way VoiceOver asks for it, or nil if the object has none.
+    private static func ax(_ object: NSObject, _ name: String) -> Any? {
+        guard object.responds(to: NSSelectorFromString(name)) else { return nil }
+        return object.value(forKey: name)
     }
 
     // MARK: Reporting
