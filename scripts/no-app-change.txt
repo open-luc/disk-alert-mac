@@ -1,3 +1,7 @@
 # Commits that touched the app's code without changing what it does, for commits made before
 # the "[no app change]" message marker existed. One commit hash (or its first 7+ characters) per line.
 6737879  Test holding alerts (moved code so it could be tested; the app behaves the same)
+1f72652  UI test: read accessibility values as properties (test mode only)
+15178a1  UI test: look accessibility values up by name (test mode only)
+8f8c2c1  UI test: click buttons where the window draws them (test mode only)
+4eeb5f3  UI test: measure buttons from the window's top (test mode only)
