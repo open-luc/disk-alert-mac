@@ -96,8 +96,9 @@ BUSY="/Volumes/DA Busy"
 hdiutil create -quiet -size 20m -fs HFS+ -volname "DA Busy" "$WORK/busy.dmg"
 if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; then
   hdiutil attach -quiet -nobrowse "$WORK/busy.dmg"
+  # Another program works in a folder on the drive. Started first, so it can't inherit the file below.
+  (cd "$BUSY" && exec sleep 120) & SLEEP_PID=$!
   exec 3>"$BUSY/open file.txt"                  # this script keeps a file open on the drive
-  (cd "$BUSY" && exec sleep 120 3>&-) & SLEEP_PID=$!   # and another program works in a folder on it
   sleep 1
 
   r=$("$WORK/drive" eject "$BUSY"); echo "  eject while in use: $r"
