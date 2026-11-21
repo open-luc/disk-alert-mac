@@ -584,6 +584,7 @@ struct DriveUserRow: View {
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)   // wrap onto a second line, never cut off
                     .frame(width: 88, alignment: .trailing)
             }
         }
