@@ -104,6 +104,7 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
   if [ "$r" = busy ]; then pass "a drive in use fails to eject and is still there"
   else fail "a drive in use fails to eject and is still there"; fi
 
+  echo "  lsof reports:"; /usr/sbin/lsof -n -P -- "$BUSY" 2>&1 | sed 's/^/    /'
   scan=$("$WORK/drive" scan "$BUSY"); echo "$scan" | sed 's/^/  using it: /'
   if echo "$scan" | grep -q '|“open file.txt” is open$'; then pass "lists the program with a file open, and which file"
   else fail "lists the program with a file open, and which file"; fi
