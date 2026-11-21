@@ -530,9 +530,8 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         guard !text.isEmpty else { return nil }
         let width: CGFloat = 300
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 100))
-        scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
-        scroll.borderType = .noBorder
+        // A thin border, so it reads as a box you can scroll rather than text that's been cut off.
+        scroll.borderType = .lineBorder
         scroll.drawsBackground = false
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: 100))
         textView.isEditable = false
@@ -540,7 +539,7 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         textView.drawsBackground = false
         textView.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         textView.textColor = .labelColor
-        textView.textContainerInset = NSSize(width: 0, height: 4)
+        textView.textContainerInset = NSSize(width: 4, height: 6)
         textView.isVerticallyResizable = true
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
@@ -549,8 +548,14 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         // As tall as the notes, up to a limit; past that it scrolls.
         if let layout = textView.layoutManager, let container = textView.textContainer {
             layout.ensureLayout(for: container)
-            let needed = layout.usedRect(for: container).height + 8
+            let needed = layout.usedRect(for: container).height + 14
             scroll.frame.size.height = min(170, max(30, ceil(needed)))
+            // When it scrolls, the scroll bar stays visible so it's clear there's more.
+            if needed > 170 {
+                scroll.hasVerticalScroller = true
+                scroll.autohidesScrollers = false
+                scroll.scrollerStyle = .legacy
+            }
         }
         return scroll
     }
