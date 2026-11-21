@@ -265,7 +265,6 @@ final class EjectSession: ObservableObject {
         // (the crash after Try Again), and later kept the window a title bar's height too tall.
         let host = NSHostingView(rootView: PinnedToTop(session: self))
         host.sizingOptions = []
-        measurer = NSHostingController(rootView: EjectBlockedView(session: self))
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
                          styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
         w.contentView = host
@@ -304,9 +303,6 @@ final class EjectSession: ObservableObject {
     /// For the UI test: the window, once shown.
     var shownWindow: NSWindow? { window }
 
-    /// The same content, unpinned, used only to measure its natural height. (Measuring the pinned
-    /// content would answer "as tall as you'll let me", and the window would fill the screen.)
-    private var measurer: NSHostingController<EjectBlockedView>?
     private var screen: NSScreen?
     private var anchorTop: CGFloat = 0
     private var changes: AnyCancellable?
@@ -314,8 +310,10 @@ final class EjectSession: ObservableObject {
     /// The window's frame size for its content at the fixed width. macOS adds the invisible title
     /// bar the content sits under, so only the content's own height goes in.
     func frameSize() -> NSSize {
-        guard let measurer, let window else { return .zero }
-        let fit = measurer.sizeThatFits(in: CGSize(width: 380, height: 10_000))
+        guard let window else { return .zero }
+        // Measured from a fresh copy of the content every time. A copy kept for measuring isn't on
+        // screen, so it can lag a change behind and give the previous layout's height.
+        let fit = NSHostingView(rootView: EjectBlockedView(session: self)).fittingSize
         return window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 380, height: ceil(fit.height))).size
     }
 
