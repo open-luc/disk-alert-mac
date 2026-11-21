@@ -136,8 +136,29 @@ enum DriveUsers {
         return ppid > 1 ? ppid : nil
     }
 
+    /// Processes named in diskutil's reason for a failed eject ("dissented by PID 312
+    /// (/System/Library/…/mds)"). This can name ones the scan can't see, such as Spotlight
+    /// running as root.
+    static func dissenters(inEjectError text: String) -> [DriveUser] {
+        guard let regex = try? NSRegularExpression(pattern: #"dissented by PID (\d+) \(([^)]*)\)"#) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.matches(in: text, range: range).compactMap { m in
+            guard let pidRange = Range(m.range(at: 1), in: text), let pid = pid_t(text[pidRange]), pid > 0,
+                  let pathRange = Range(m.range(at: 2), in: text) else { return nil }
+            let command = (String(text[pathRange]) as NSString).lastPathComponent
+            if let app = owningApp(of: pid) {
+                return DriveUser(id: app.processIdentifier, name: app.localizedName ?? command, kind: .app,
+                                 detail: "Using this drive", appPath: app.bundleURL?.path)
+            }
+            if let service = macOSService(command: command, pid: pid) {
+                return DriveUser(id: pid, name: "macOS (\(service.name))", kind: .macOS, detail: service.detail)
+            }
+            return DriveUser(id: pid, name: command, kind: .process, detail: "Using this drive")
+        }
+    }
+
     /// Parts of macOS that use drives on their own. They can't be quit, and usually finish soon.
-    private static func macOSService(command: String, pid: pid_t) -> (name: String, detail: String)? {
+    static func macOSService(command: String, pid: pid_t) -> (name: String, detail: String)? {
         let spotlight = ["mds", "mds_stores", "mdworker", "mdworker_shared", "mdsync", "corespotlightd"]
         if spotlight.contains(command) { return ("Spotlight", "Indexing this drive. Try again in a moment.") }
         if command.hasPrefix("backupd") { return ("Time Machine", "Backing up to this drive") }

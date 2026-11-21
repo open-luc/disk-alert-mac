@@ -85,6 +85,8 @@ case "eject":
     catch { print(VolumeInfo.isMounted(path) ? "busy" : "gone") }
 case "scan":
     for u in DriveUsers.scan(mountPoint: path) { print("\(u.kind)|\(u.name)|\(u.detail)") }
+case "dissent":
+    for u in DriveUsers.dissenters(inEjectError: path) { print("\(u.kind)|\(u.name)|\(u.detail)") }
 case "force":
     let why = ForceEject.run(mountPoint: path)
     print(why == nil && !VolumeInfo.isMounted(path) ? "forced" : "failed: \(why ?? "still mounted")")
@@ -111,6 +113,13 @@ if xcrun swiftc -O Sources/Shared/*.swift "$WORK/main.swift" -o "$WORK/drive"; t
   else fail "lists the program with a file open, and which file"; fi
   if echo "$scan" | grep -q '^process|sleep|Working in a folder on this drive$'; then pass "lists a program working in a folder on the drive"
   else fail "lists a program working in a folder on the drive"; fi
+
+  echo "  diskutil's reason (Try Again reads it for processes the scan can't see):"
+  /usr/sbin/diskutil eject "$BUSY" 2>&1 | sed 's/^/    /'
+  r=$("$WORK/drive" dissent "Volume DA Busy on disk9s1 failed to unmount: dissented by PID $$ (/bin/bash)")
+  echo "  parsed: $r"
+  if [ "$r" = "process|bash|Using this drive" ]; then pass "reads which process blocked the eject from macOS's error"
+  else fail "reads which process blocked the eject from macOS's error"; fi
 
   r=$("$WORK/drive" force "$BUSY"); echo "  force eject: $r"
   if [ "$r" = forced ] && [ ! -d "$BUSY" ]; then pass "Force Eject ejects a drive that's still in use"

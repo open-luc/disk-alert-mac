@@ -10,6 +10,8 @@ final class EjectSession: ObservableObject {
     @Published private(set) var users: [DriveUser] = []
     @Published private(set) var phase: Phase = .blocked
     @Published private(set) var error: String?
+    @Published private(set) var checking = false     // a retry is running: the button shows a spinner
+    @Published private(set) var status: String?      // what the last retry found
     @Published var showDifferences = false
 
     private var quitting: [NSRunningApplication] = []
@@ -79,7 +81,7 @@ final class EjectSession: ObservableObject {
         stopTimer()
         phase = .blocked
         error = nil
-        attemptEject()
+        retry()
     }
 
     func cancel() {
@@ -99,8 +101,76 @@ final class EjectSession: ObservableObject {
     }
 
     private func rescan() {
+        users = Self.scan(volumes, extra: [])
+    }
+
+    private static func scan(_ volumes: [MountedVolume], extra: [DriveUser]) -> [DriveUser] {
         var seen = Set<pid_t>()
-        users = volumes.flatMap { DriveUsers.scan(mountPoint: $0.url.path) }.filter { seen.insert($0.id).inserted }
+        let found = volumes.flatMap { DriveUsers.scan(mountPoint: $0.url.path) } + extra
+        return found.filter { seen.insert($0.id).inserted }
+    }
+
+    /// Tries to eject again without freezing the window: the button shows "Checking…" meanwhile,
+    /// for long enough to see. Still busy: the window shakes and says what it found, with the time,
+    /// so every press visibly does something. Ejected: the window closes and the agent plays its sound.
+    private func retry() {
+        guard !checking else { return }
+        checking = true
+        let before = users
+        let pending = volumes
+        let started = Date()
+        DispatchQueue.global(qos: .userInitiated).async {
+            var stillThere: [MountedVolume] = []
+            var dissenters: [DriveUser] = []
+            for v in pending {
+                let r = DriveUsers.run("/usr/sbin/diskutil", ["eject", v.url.path])
+                if r.status != 0 && VolumeInfo.isMounted(v.url.path) {
+                    stillThere.append(v)
+                    dissenters += DriveUsers.dissenters(inEjectError: r.output)
+                }
+            }
+            let found = Self.scan(stillThere, extra: dissenters)
+            let wait = max(0, 0.7 - Date().timeIntervalSince(started))
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+                self.checking = false
+                self.volumes = stillThere
+                if stillThere.isEmpty { self.finish(); return }
+                self.users = found
+                self.status = Self.status(before: before, after: found)
+                self.shake()
+            }
+        }
+    }
+
+    /// "Still in use (checked at 3:42:10 PM)." or "Preview let go, but it’s still in use (…)."
+    private static func status(before: [DriveUser], after: [DriveUser]) -> String {
+        let time = Date().formatted(date: .omitted, time: .standard)
+        let still = Set(after.map(\.id))
+        let gone = before.filter { !still.contains($0.id) }.map(\.name)
+        let checked = "(checked at \(time))."
+        switch gone.count {
+        case 0: return "Still in use " + checked
+        case 1: return "\(gone[0]) let go, but it’s still in use " + checked
+        case 2: return "\(gone[0]) and \(gone[1]) let go, but it’s still in use " + checked
+        default: return "\(gone.count) apps let go, but it’s still in use " + checked
+        }
+    }
+
+    /// The sideways shake macOS uses for "that didn't work". Left out with Reduce Motion on.
+    private func shake() {
+        guard let window, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let origin = window.frame.origin
+        let path = CGMutablePath()
+        path.move(to: origin)
+        for offset in [-9.0, 9.0, -6.0, 6.0, -3.0, 3.0] {
+            path.addLine(to: CGPoint(x: origin.x + offset, y: origin.y))
+        }
+        path.addLine(to: origin)
+        let animation = CAKeyframeAnimation()
+        animation.path = path
+        animation.duration = 0.4
+        window.animations = ["frameOrigin": animation]
+        window.animator().setFrameOrigin(origin)
     }
 
     private func startTimer() {
@@ -122,7 +192,7 @@ final class EjectSession: ObservableObject {
         if quitting.isEmpty {
             stopTimer()
             phase = .blocked
-            attemptEject()
+            retry()
             return
         }
         if phase == .quitting && Date().timeIntervalSince(quitStarted) > 3 {
@@ -226,6 +296,14 @@ struct EjectBlockedView: View {
 
             if !session.users.isEmpty { list }
 
+            if let status = session.status, !session.checking {
+                Label(status, systemImage: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+
             if let error = session.error {
                 Text(error)
                     .font(.system(size: 12))
@@ -286,9 +364,9 @@ struct EjectBlockedView: View {
                 }
                 wide("Force Eject", destructive: true) { session.forceEject() }
                 if session.offerQuit {
-                    wide("Try Again") { session.tryAgain() }
+                    wide(tryTitle, spinning: session.checking) { session.tryAgain() }
                 } else {
-                    wide("Try Again", prominent: true) { session.tryAgain() }
+                    wide(tryTitle, prominent: true, spinning: session.checking) { session.tryAgain() }
                         .keyboardShortcut(.defaultAction)
                 }
             case .quitting:
@@ -299,7 +377,7 @@ struct EjectBlockedView: View {
                 .frame(maxWidth: .infinity, minHeight: 28)
                 wide("Force Eject", destructive: true) { session.forceEject() }
             case .stillOpen:
-                wide("Try Again", prominent: true) { session.tryAgain() }
+                wide(tryTitle, prominent: true, spinning: session.checking) { session.tryAgain() }
                     .keyboardShortcut(.defaultAction)
                 wide("Force Eject", destructive: true) { session.forceEject() }
             }
@@ -307,17 +385,23 @@ struct EjectBlockedView: View {
                 .keyboardShortcut(.cancelAction)
         }
         .padding(.top, 2)
+        .disabled(session.checking)
     }
 
-    private func wide(_ title: String, prominent: Bool = false, destructive: Bool = false,
+    private var tryTitle: String { session.checking ? "Checking…" : "Try Again" }
+
+    private func wide(_ title: String, prominent: Bool = false, destructive: Bool = false, spinning: Bool = false,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
             // Only Force Eject sets its own color. The default button's text is left to macOS,
             // which keeps it readable when this window isn't in front (the button turns grey then).
-            Text(title)
-                .fontWeight(.semibold)
-                .foregroundStyle(destructive ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.primary))
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 6) {
+                if spinning { ProgressView().controlSize(.small) }
+                Text(title)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(destructive ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.primary))
+            }
+            .frame(maxWidth: .infinity)
         }
         .controlSize(.large)
         .buttonStyle(ProminenceStyle(prominent: prominent))
