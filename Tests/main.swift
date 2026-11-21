@@ -1,7 +1,7 @@
 import Foundation
 
-// Tests for AlertHold and PresenceState. They use Foundation only, so they run on any Mac
-// and on Linux:  swiftc Sources/Shared/AlertHold.swift Tests/main.swift -o tests && ./tests
+// Tests for the parts of Disk Alert that use Foundation only, so they run on any Mac and on Linux:
+//   swiftc Sources/Shared/AlertHold.swift Sources/Shared/ReleaseNotes.swift Tests/main.swift -o tests && ./tests
 
 var failures = 0
 func check(_ ok: Bool, _ what: String, line: Int = #line) {
@@ -74,6 +74,43 @@ do {
     check(hold.release(canAlert: state.canAlert(at: unlocked)).isEmpty, "unlocked within 3 seconds of waking: still held")
     check(hold.release(canAlert: state.canAlert(at: wake.addingTimeInterval(3))) == ["SSD connected"],
           "3 seconds after waking and unlocked: alert plays")
+}
+
+// MARK: ReleaseNotes
+
+do {
+    // An alpha's notes as CI writes them today, and as older alphas had them.
+    let alpha = """
+    Alpha build from `claude/kind-shannon-iux7fv`. Not fully tested and may be incomplete.
+
+    ## Changes not yet in a public release
+    - Offer Try Again when a drive can't be ejected
+    - Hold alerts until the Mac is awake and unlocked
+    """
+    let plain = ReleaseNotes.plain(alpha)
+    check(plain == "Changes not yet in a public release:\n• Offer Try Again when a drive can't be ejected\n• Hold alerts until the Mac is awake and unlocked",
+          "alpha notes: heading, bullets, and no repeated \"not fully tested\" line")
+    check(!plain.contains("#") && !plain.contains("`"), "no Markdown marks left in alpha notes")
+}
+
+do {
+    let release = """
+    ## What's new
+    - Show what's using a drive that won't eject
+
+    ## Install
+    Download **Disk-Alert-0.5.0.dmg**, open it and drag Disk Alert into Applications.
+    """
+    check(ReleaseNotes.plain(release) == "What's new:\n• Show what's using a drive that won't eject",
+          "public release notes: the Install section is left out")
+}
+
+do {
+    check(ReleaseNotes.plain("Some **bold** and __more__ text") == "Some bold and more text", "bold marks dropped")
+    check(ReleaseNotes.plain("") == "", "empty notes stay empty")
+    let long = (1...100).map { "- Change number \($0)" }.joined(separator: "\n")
+    let cut = ReleaseNotes.plain(long, limit: 120)
+    check(cut.count <= 122 && cut.hasSuffix("\n…") && cut.hasPrefix("• Change number 1\n"), "long notes are cut at a line and end with …")
 }
 
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) test(s) failed.")

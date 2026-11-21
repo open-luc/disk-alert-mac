@@ -148,8 +148,6 @@ jobs:
             fi
           fi
           {
-            echo "Alpha build from \`${GITHUB_REF_NAME}\`. Not fully tested and may be incomplete."
-            echo
             echo "## Changes not yet in a public release"
             echo "${SINCE_MAIN:-- Rebuilt, no changes to the app}"
           } > notes.md

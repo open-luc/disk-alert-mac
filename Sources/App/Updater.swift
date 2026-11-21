@@ -117,13 +117,12 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         state = .upToDate
         guard userInitiated else { return }
 
-        let versions = versionSummary(stable: stable, alpha: alpha)
-        // Alphas are offered only when asked, and never pushed: OK is the default.
+        // Alphas are offered only when asked, and never pushed: Not Now is the default.
         if alphaOptIn, let alpha, Self.isNewer(alpha.version, than: currentVersion) {
-            offerAlpha(alpha, versions: versions)
+            offerAlpha(alpha, stable: stable)
             return
         }
-        alert("You’re up to date", versions)
+        alert("You’re up to date", versionSummary(stable: stable, alpha: alpha))
     }
 
     /// Which version you have, and the newest public release and alpha, one per line.
@@ -137,20 +136,10 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return lines.joined(separator: "\n")
     }
 
-    private func offerAlpha(_ release: Release, versions: String) {
+    private func offerAlpha(_ release: Release, stable: Release?) {
         NSApp.activate(ignoringOtherApps: true)
         let alphaName = Self.display(release.version)
-        let a = NSAlert()
-        a.messageText = "You’re up to date"
-        var text = versions
-        text += "\n\nYou can install \(alphaName) if you like. Alpha builds haven’t been fully tested and may be incomplete."
-        var notes = (release.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if notes.count > 500 { notes = String(notes.prefix(500)) + "…" }
-        if !notes.isEmpty { text += "\n\n" + notes }
-        a.informativeText = text
-        a.addButton(withTitle: "OK")
-        a.addButton(withTitle: "Install Alpha")
-        a.addButton(withTitle: "View on GitHub")
+        let a = alphaAlert(release, stable: stable)
         switch a.runModal() {
         case .alertSecondButtonReturn:
             guard let dmg = release.assets.first(where: { $0.name.hasSuffix(".dmg") }),
@@ -165,6 +154,24 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         default:
             break
         }
+    }
+
+    /// "Disk Alert 0.5.0 Alpha 31 is available", with Not Now as the default.
+    func alphaAlert(_ release: Release, stable: Release?) -> NSAlert {
+        let alphaName = Self.display(release.version)
+        let a = NSAlert()
+        a.messageText = "Disk Alert \(alphaName) is available"
+        let publicVersion = stable.map { Self.display($0.version) } ?? "none yet"
+        var text = "This is an alpha build: it hasn’t been fully tested and may be incomplete. "
+        text += "You’re up to date with the public release (\(publicVersion)), so install it only if you want to try what’s coming."
+        text += "\n\nYou have \(displayVersion)."
+        let notes = ReleaseNotes.plain(release.body ?? "", limit: 500)
+        if !notes.isEmpty { text += "\n\n" + notes }
+        a.informativeText = text
+        a.addButton(withTitle: "Not Now")
+        a.addButton(withTitle: "Install Alpha")
+        a.addButton(withTitle: "View on GitHub")
+        return a
     }
 
     /// A version like 0.4.1 or 0.4.1-alpha.18. An alpha comes before the release it leads up to.
@@ -203,9 +210,8 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
         a.messageText = "Disk Alert \(Self.display(version)) is available"
-        var notes = (release.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if notes.count > 600 { notes = String(notes.prefix(600)) + "…" }
-        a.informativeText = "You have \(displayVersion).\n\n" + (notes.isEmpty ? "" : notes)
+        let notes = ReleaseNotes.plain(release.body ?? "")
+        a.informativeText = "You have \(displayVersion)." + (notes.isEmpty ? "" : "\n\n" + notes)
         a.addButton(withTitle: "Install and Relaunch")
         a.addButton(withTitle: "Later")
         a.addButton(withTitle: "View on GitHub")
