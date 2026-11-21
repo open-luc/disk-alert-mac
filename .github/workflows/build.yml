@@ -43,6 +43,8 @@ jobs:
           echo "version=$BASE.$PATCH" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
           echo "full=$FULL" >> "$GITHUB_OUTPUT"
+          # Same as scripts/build.sh: a fingerprint of what goes into the app.
+          echo "source=$(git ls-tree -r HEAD -- Sources Resources scripts/build.sh scripts/make-icon.swift VERSION | git hash-object --stdin | cut -c1-12)" >> "$GITHUB_OUTPUT"
           echo "last=$LAST" >> "$GITHUB_OUTPUT"
           echo "Version $FULL (previous release: ${LAST:-none})"
 
@@ -51,6 +53,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          SOURCE_HASH: ${{ steps.version.outputs.source }}
         run: |
           set -o pipefail
           chmod +x scripts/build.sh
@@ -108,6 +111,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
           LAST: ${{ steps.version.outputs.last }}
+          SOURCE_HASH: ${{ steps.version.outputs.source }}
         run: |
           CHANGES="$(scripts/app-changes.sh $LAST)"
           if [[ -z "$CHANGES" && "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
@@ -120,6 +124,8 @@ jobs:
             echo
             echo "## Install"
             echo "Download **Disk-Alert-$VERSION.dmg**, open it and drag Disk Alert into Applications. Already installed? Use **Check for Updates** in the menu bar."
+            echo
+            echo "<!-- source: $SOURCE_HASH -->"
           } > notes.md
           gh release create "v$VERSION" build/*.dmg --target "$GITHUB_SHA" \
             --title "Disk Alert $VERSION" --notes-file notes.md --latest
@@ -129,6 +135,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.full }}
+          SOURCE_HASH: ${{ steps.version.outputs.source }}
         run: |
           SINCE_MAIN="$(scripts/app-changes.sh origin/main)"
           LAST_ALPHA="$(gh release list --limit 100 --json tagName,isPrerelease,createdAt \
@@ -150,6 +157,8 @@ jobs:
           {
             echo "## Changes not yet in a public release"
             echo "${SINCE_MAIN:-- Rebuilt, no changes to the app}"
+            echo
+            echo "<!-- source: $SOURCE_HASH -->"
           } > notes.md
           gh release create "v$VERSION" build/*.dmg --target "$GITHUB_SHA" \
             --title "Disk Alert $VERSION" --notes-file notes.md --prerelease --latest=false

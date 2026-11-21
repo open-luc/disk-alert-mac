@@ -9,6 +9,9 @@ BUILD_NUMBER="${BUILD_NUMBER:-1}"
 # Set for alpha builds, e.g. "alpha.18". The app shows it next to the version and
 # CFBundleShortVersionString stays plain numbers, as macOS expects.
 PRERELEASE="${PRERELEASE:-}"
+# A fingerprint of everything that goes into the app. Check for Updates compares it with the one in
+# a release's notes, so an alpha with the same code as a new public release counts as up to date.
+SOURCE_HASH="${SOURCE_HASH:-$(git ls-tree -r HEAD -- Sources Resources scripts/build.sh scripts/make-icon.swift VERSION 2>/dev/null | git hash-object --stdin 2>/dev/null | cut -c1-12)}"
 FULL_VERSION="$VERSION${PRERELEASE:+-$PRERELEASE}"
 MIN_OS="15.0"
 OUT="build"
@@ -61,6 +64,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
   <key>DAPrerelease</key><string>$PRERELEASE</string>
+  <key>DASourceHash</key><string>$SOURCE_HASH</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_OS</string>
   <key>LSUIElement</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>

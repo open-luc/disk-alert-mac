@@ -113,5 +113,12 @@ do {
     check(cut.count <= 122 && cut.hasSuffix("\n…") && cut.hasPrefix("• Change number 1\n"), "long notes are cut at a line and end with …")
 }
 
+do {
+    let notes = "## What's new\n- Something\n\n<!-- source: 3f9a0c1d -->\n"
+    check(ReleaseNotes.sourceHash(in: notes) == "3f9a0c1d", "reads the source fingerprint from release notes")
+    check(ReleaseNotes.sourceHash(in: "## What's new\n- Something") == nil, "no fingerprint in older notes")
+    check(ReleaseNotes.plain(notes) == "What's new:\n• Something", "the fingerprint never shows in the notes")
+}
+
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) test(s) failed.")
 exit(failures == 0 ? 0 : 1)

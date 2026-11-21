@@ -42,6 +42,15 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     var isAlpha: Bool { Version(currentVersion).pre != nil }
 
+    /// A fingerprint of the source code this copy was built from (see scripts/build.sh).
+    var sourceHash: String { Bundle.main.object(forInfoDictionaryKey: "DASourceHash") as? String ?? "" }
+
+    /// Whether a release is this very app under another number, such as the public release
+    /// made from the same code as the alpha you have.
+    func isSameApp(as release: Release) -> Bool {
+        !sourceHash.isEmpty && ReleaseNotes.sourceHash(in: release.body ?? "") == sourceHash
+    }
+
     /// The version as people read it, e.g. "0.4.1" or "0.4.1 Alpha 18".
     var displayVersion: String { Self.display(currentVersion) }
 
@@ -108,8 +117,8 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let stable = newest(published.filter { $0.prerelease != true })
         let alpha = newest(published.filter { $0.prerelease == true })
 
-        // A newer public release always comes first.
-        if let stable, Self.isNewer(stable.version, than: currentVersion) {
+        // A newer public release always comes first, unless it's the same app you already have.
+        if let stable, Self.isNewer(stable.version, than: currentVersion), !isSameApp(as: stable) {
             state = .available(stable.version)
             offer(stable, version: stable.version)
             return
@@ -122,18 +131,22 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
             offerAlpha(alpha, stable: stable)
             return
         }
-        alert("You’re up to date", versionSummary(stable: stable, alpha: alpha))
+        alert("You’re up to date", upToDateText(stable: stable, alpha: alpha))
     }
 
-    /// Which version you have, and the newest public release and alpha, one per line.
-    /// The alpha line only shows once alpha builds are turned on.
-    private func versionSummary(stable: Release?, alpha: Release?) -> String {
-        var lines = ["You have: \(displayVersion)"]
-        lines.append("Latest public release: " + (stable.map { Self.display($0.version) } ?? "none"))
-        if alphaOptIn {
-            lines.append("Latest alpha: " + (alpha.map { Self.display($0.version) } ?? "none"))
+    /// One line: the version you have, and in brackets why it's current.
+    /// "You have 0.4.1 (the latest version)." or "You have 0.5.0 Alpha 35 (the latest alpha)."
+    private func upToDateText(stable: Release?, alpha: Release?) -> String {
+        let you = "You have \(displayVersion)"
+        guard isAlpha else { return you + " (the latest version)." }
+        if let stable, isSameApp(as: stable) {
+            return you + " (the same as \(Self.display(stable.version)), the latest version)."
         }
-        return lines.joined(separator: "\n")
+        if alpha == nil || !Self.isNewer(alpha!.version, than: currentVersion) {
+            return you + " (the latest alpha)."
+        }
+        let newest = stable.map { ", \(Self.display($0.version))" } ?? ""
+        return you + " (an alpha, newer than the latest public release\(newest))."
     }
 
     private func offerAlpha(_ release: Release, stable: Release?) {
