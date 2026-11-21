@@ -366,7 +366,9 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let mount = work.appendingPathComponent("mnt")
         try? FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
         show(step: "Opening the update…", 0.84)
-        let attach = DriveUsers.run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-noautoopen",
+        // -noverify skips re-reading the whole installer to check it (most of the wait); the app
+        // copied out of it gets a stronger check below, of its code signature.
+        let attach = DriveUsers.run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-noautoopen", "-noverify",
                                                          "-mountpoint", mount.path, dmg.path])
         guard attach.status == 0 else { return .failure(InstallError(message: "macOS couldn’t open the downloaded installer.")) }
         defer { DriveUsers.run("/usr/bin/hdiutil", ["detach", mount.path, "-quiet"]) }
@@ -386,6 +388,10 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
         guard bundle?.bundleIdentifier == Bundle.main.bundleIdentifier, let exec = bundle?.executableURL,
               FileManager.default.isExecutableFile(atPath: exec.path) else {
             return .failure(InstallError(message: "The downloaded app doesn’t look like Disk Alert."))
+        }
+        // Every file in the new version must match its signature: nothing missing, changed or added.
+        guard DriveUsers.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", staged.path]).status == 0 else {
+            return .failure(InstallError(message: "The downloaded app is damaged. Try Check for Updates again."))
         }
         DriveUsers.run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staged.path])
         return .success(staged)
