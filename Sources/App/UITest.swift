@@ -53,6 +53,10 @@ enum UITest {
             after(0.3) {   // let the window finish fitting its filled-in list
             let needed = session.frameSize().height
             let actual = window.frame.height
+            if let content = window.contentView {
+                print(String(format: "      (window %.0f, content view %.0f, layout area %.0f, safe area top %.0f)",
+                             window.frame.height, content.frame.height, window.contentLayoutRect.height, content.safeAreaInsets.top))
+            }
             check(abs(actual - needed) < 4, String(format: "the window fits its content, no empty space (%.0f points tall, content needs %.0f)", actual, needed))
             check(actual < 700, String(format: "and isn't oversized (%.0f points tall)", actual))
             capture(window, as: "list")

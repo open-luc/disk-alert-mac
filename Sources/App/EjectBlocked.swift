@@ -259,16 +259,16 @@ final class EjectSession: ObservableObject {
     /// ended from a timer or background step can outlive its window and leave every other
     /// button in the app dead. When it grows, its top stays put.
     private func show() {
-        let host = NSHostingController(rootView: PinnedToTop(session: self))
-        measurer = NSHostingController(rootView: EjectBlockedView(session: self))
-        // The window sets its own size (fitToContent), once per change. Letting SwiftUI drive the
-        // window's size through Auto Layout could bounce between the two until macOS stopped the
-        // app, which is what crashed it after Try Again.
+        // A plain SwiftUI view with no say in the window's size: the window sets its own size
+        // (fitToContent), once per change. Letting SwiftUI size the window, through a hosting
+        // controller or its view's constraints, bounced between the two until macOS stopped the app
+        // (the crash after Try Again), and later kept the window a title bar's height too tall.
+        let host = NSHostingView(rootView: PinnedToTop(session: self))
         host.sizingOptions = []
-        hosting = host
+        measurer = NSHostingController(rootView: EjectBlockedView(session: self))
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
                          styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
-        w.contentViewController = host
+        w.contentView = host
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
         // Dragged by its top edge only. Movable-by-background can take a click on a button for
@@ -304,7 +304,6 @@ final class EjectSession: ObservableObject {
     /// For the UI test: the window, once shown.
     var shownWindow: NSWindow? { window }
 
-    private var hosting: NSHostingController<PinnedToTop>?
     /// The same content, unpinned, used only to measure its natural height. (Measuring the pinned
     /// content would answer "as tall as you'll let me", and the window would fill the screen.)
     private var measurer: NSHostingController<EjectBlockedView>?
