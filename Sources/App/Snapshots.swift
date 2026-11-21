@@ -37,9 +37,11 @@ enum Snapshots {
                    to: out.appendingPathComponent("eject-still-open-\(suffix).png"), look: look)
         }
         renderUpdateAlert(to: out.appendingPathComponent("update-alpha-light.png"))
-        capture(Updater.makeAlert("You’re up to date", "You have 0.5.0 Alpha 46 (the latest alpha).",
-                                  footnote: "Public release: 0.4.1"),
-                to: out.appendingPathComponent("update-up-to-date-light.png"))
+        let upToDate = Updater.makeAlert("You’re up to date", "You have 0.5.0 Alpha 46 (the latest alpha).",
+                                         footnote: "Public release: 0.4.1")
+        upToDate.addButton(withTitle: "OK")
+        upToDate.addButton(withTitle: "Switch to Public Release…")
+        capture(upToDate, to: out.appendingPathComponent("update-up-to-date-light.png"))
         print("Snapshots written to \(out.path)")
         exit(0)
     }

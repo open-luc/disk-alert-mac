@@ -132,7 +132,41 @@ final class Updater: NSObject, ObservableObject, URLSessionDownloadDelegate {
             return
         }
         let upToDate = upToDateText(stable: stable, alpha: alpha)
+        // On an alpha, the public release can be installed instead, from the same message.
+        if isAlpha, let stable, !isSameApp(as: stable) {
+            NSApp.activate(ignoringOtherApps: true)
+            let a = Self.makeAlert("You’re up to date", upToDate.text, footnote: upToDate.footnote)
+            a.addButton(withTitle: "OK")
+            a.addButton(withTitle: "Switch to Public Release…")
+            if a.runModal() == .alertSecondButtonReturn { switchToPublic(stable) }
+            return
+        }
         alert("You’re up to date", upToDate.text, footnote: upToDate.footnote)
+    }
+
+    /// Leaves the alpha for the public release. That usually means going back to an older version,
+    /// so it asks first, and it turns alpha builds off so Check for Updates doesn't offer the alpha
+    /// straight back.
+    private func switchToPublic(_ stable: Release) {
+        let name = Self.display(stable.version)
+        let older = Version(stable.version) < Version(currentVersion)
+        let a = NSAlert()
+        a.messageText = "Switch to Disk Alert \(name)?"
+        a.informativeText = (older
+            ? "\(name) is older than the alpha you have (\(displayVersion)), so anything the alpha added that isn’t in a public release yet goes away. "
+            : "")
+            + "Your settings, drives and sounds stay as they are. Alpha builds turn off, so Check for Updates only offers public releases from now on. You can turn them back on in Settings."
+        a.addButton(withTitle: "Switch to \(name)")
+        a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        guard let dmg = stable.assets.first(where: { $0.name.hasSuffix(".dmg") }),
+              let url = URL(string: dmg.browser_download_url) else {
+            alert("Couldn’t switch", "This release has no .dmg installer attached.")
+            return
+        }
+        alphaOptIn = false
+        pendingVersion = name
+        install(from: url)
     }
 
     /// One line: the version you have, and in brackets why it's current. On an alpha, a smaller
