@@ -81,16 +81,20 @@ enum UITest {
 
     // MARK: Clicking
 
-    /// Finds the button by its accessibility title, as VoiceOver would, and clicks its middle.
+    /// Clicks the middle of the button with this title, where the window last drew it.
+    /// (SwiftUI only builds its accessibility tree for a running screen reader, so the window
+    /// records its button frames itself.)
     @discardableResult
     private static func click(_ title: String, in window: NSWindow) -> Bool {
-        guard let content = window.contentView, let frame = find(title, in: content) else {
-            check(false, "finds the \(title) button")
-            print("Accessibility tree:")
-            dump(window.contentView as Any, depth: 0)
+        guard let session = EjectSession.open.first, let frame = session.buttonFrames[title],
+              let content = window.contentView else {
+            check(false, "finds the \(title) button (knows of: \(EjectSession.open.first?.buttonFrames.keys.sorted() ?? []))")
             return false
         }
-        post(click: NSPoint(x: frame.midX, y: frame.midY), in: window)
+        // The content view's coordinates start at the top left; the window's at the bottom left.
+        let inContent = NSPoint(x: frame.midX, y: content.isFlipped ? frame.midY : content.bounds.height - frame.midY)
+        let inWindow = content.convert(inContent, to: nil)
+        post(click: window.convertPoint(toScreen: inWindow), in: window)
         return true
     }
 
@@ -104,32 +108,6 @@ enum UITest {
                 NSApp.postEvent(event, atStart: false)
             }
         }
-    }
-
-    private static func find(_ title: String, in element: Any, depth: Int = 0) -> NSRect? {
-        guard depth < 60, let e = element as? NSObject else { return nil }
-        let texts = [ax(e, "accessibilityLabel") as? String, ax(e, "accessibilityTitle") as? String].compactMap { $0 }
-        if ax(e, "accessibilityRole") as? String == NSAccessibility.Role.button.rawValue, texts.contains(title) {
-            return (ax(e, "accessibilityFrame") as? NSValue)?.rectValue
-        }
-        for child in ax(e, "accessibilityChildren") as? [Any] ?? [] {
-            if let found = find(title, in: child, depth: depth + 1) { return found }
-        }
-        return nil
-    }
-
-    private static func dump(_ element: Any, depth: Int) {
-        guard depth < 12, let e = element as? NSObject else { return }
-        let role = ax(e, "accessibilityRole") as? String ?? "?"
-        let label = ax(e, "accessibilityLabel") as? String ?? ax(e, "accessibilityTitle") as? String ?? ""
-        print(String(repeating: "  ", count: depth + 1) + role + " " + label)
-        for child in ax(e, "accessibilityChildren") as? [Any] ?? [] { dump(child, depth: depth + 1) }
-    }
-
-    /// An accessibility value by name, the way VoiceOver asks for it, or nil if the object has none.
-    private static func ax(_ object: NSObject, _ name: String) -> Any? {
-        guard object.responds(to: NSSelectorFromString(name)) else { return nil }
-        return object.value(forKey: name)
     }
 
     // MARK: Reporting
